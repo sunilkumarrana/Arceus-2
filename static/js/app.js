@@ -1,7 +1,7 @@
 /**
  * सुविधा वाणी (SuvidhaVani) - Client Application Controller
- * Handles Multilingual Web Speech API (STT/TTS), View Routing,
- * Real-time Slot Inspection, Explainability Modals, and the SIH Judge Suite.
+ * Features the ChatGPT-style Voice Orb UI, Clean Starting Page Intake,
+ * Real-time STT / TTS, Deterministic Evaluation, and SIH Judge Benchmark Suite.
  */
 
 // Application Global State
@@ -10,7 +10,7 @@ const state = {
   language: "hi", // default to Hindi
   voiceOutputEnabled: true,
   currentRole: "citizen",
-  activeView: "voice",
+  activeView: "landing", // starts on the clean landing page
   currentProfile: {},
   evaluations: [],
   catalogSchemes: [],
@@ -25,8 +25,50 @@ const state = {
 document.addEventListener("DOMContentLoaded", () => {
   initSpeech();
   loadCatalogData();
-  resetConversation();
+  // Do not speak until user clicks "Continue with AI Agent" or interacts
 });
+
+// ==========================================
+// STARTING PAGE / ONBOARDING FLOW
+// ==========================================
+function continueWithAIAgent() {
+  const name = document.getElementById("landing-name").value.trim();
+  const occ = document.getElementById("landing-occupation").value;
+  const userState = document.getElementById("landing-state").value;
+  const lang = document.getElementById("landing-lang").value;
+
+  state.language = lang;
+  document.getElementById("app-lang-select").value = lang;
+
+  if (name) state.currentProfile.name = name;
+  if (occ) state.currentProfile.occupation = occ;
+  if (userState) state.currentProfile.state = userState;
+
+  // Switch to Voice Orb Screen
+  switchView("voice");
+
+  // Format initial greeting
+  let introMsg = "";
+  if (name && occ) {
+    introMsg = lang === "hi"
+      ? `नमस्ते ${name} जी! आपका स्वागत है। मुझे पता चला कि आप ${occ === 'farmer' ? 'किसान' : occ} हैं। आप मुझे अपनी आयु, ज़मीन या पारिवारिक आय के बारे में बताएं, मैं आपकी सरकारी योजनाओं की जाँच करूँगी।`
+      : `Hello ${name}! Welcome. I see you are working in ${occ}. Please tell me your age, income, or landholding details so I can verify your welfare benefits.`;
+  } else if (name) {
+    introMsg = lang === "hi"
+      ? `नमस्ते ${name} जी! मैं सुविधा वाणी हूँ। आप अपने व्यवसाय और परिवार के बारे में बताएं, मैं आपके लिए सबसे उपयुक्त सरकारी योजनाओं का पता लगाऊँगी।`
+      : `Hello ${name}! I am Suvidha Vani. Tell me about your livelihood and family, and I will find the best government schemes for you.`;
+  } else {
+    introMsg = lang === "hi"
+      ? "नमस्ते! मैं सुविधा वाणी हूँ, आपका सरकारी योजना सहायक। आप बोलकर या लिखकर बताएं कि आप क्या काम करते हैं और आपकी क्या आवश्यकता है?"
+      : "Hello! I am Suvidha Vani, your voice assistant for Government Schemes. Tell me about what work you do or what support you need.";
+  }
+
+  setOrbCaption(introMsg);
+  playSpeech(introMsg, lang);
+
+  // If initial slots were provided, sync slot inspector
+  updateSlotInspector(state.currentProfile);
+}
 
 // ==========================================
 // SPEECH RECOGNITION (STT) & SYNTHESIS (TTS)
@@ -42,8 +84,8 @@ function initSpeech() {
     state.recognition.onstart = () => {
       state.isListening = true;
       updateMicUI(true);
-      setWaveformActive(true);
-      document.getElementById("voice-indicator-status").innerText = "Listening... बोलिए...";
+      setOrbListening(true);
+      document.getElementById("orb-status-indicator").innerText = "🔴 Listening... बोलिए...";
     };
 
     state.recognition.onresult = (event) => {
@@ -56,14 +98,15 @@ function initSpeech() {
       console.warn("Speech recognition error:", event.error);
       state.isListening = false;
       updateMicUI(false);
-      setWaveformActive(false);
-      document.getElementById("voice-indicator-status").innerText = "Mic Ready • Click Mic or Type Below";
+      setOrbListening(false);
+      document.getElementById("orb-status-indicator").innerText = "🎙️ Tap Orb or Mic to Speak";
     };
 
     state.recognition.onend = () => {
       state.isListening = false;
       updateMicUI(false);
-      setWaveformActive(false);
+      setOrbListening(false);
+      document.getElementById("orb-status-indicator").innerText = "🎙️ Tap Orb or Mic to Speak";
     };
   } else {
     console.info("Web Speech API not supported in this browser. Fallback to text input.");
@@ -72,7 +115,7 @@ function initSpeech() {
 
 function toggleVoiceInput() {
   if (!state.recognition) {
-    alert("Web Speech API is not supported in this browser. Please type your message in the text input box below.");
+    alert("Web Speech API is not supported in this browser. Please type in the input bar below.");
     return;
   }
   if (state.isListening) {
@@ -96,29 +139,32 @@ function updateMicUI(listening) {
   }
 }
 
-function setWaveformActive(active) {
-  const bars = document.querySelectorAll("#waveform-visualizer .wave-bar");
-  bars.forEach(b => {
-    if (active) b.classList.add("animating");
-    else b.classList.remove("animating");
-  });
+function setOrbListening(listening) {
+  const orb = document.getElementById("main-voice-orb");
+  if (!orb) return;
+  if (listening) {
+    orb.classList.add("listening");
+    orb.classList.remove("speaking");
+  } else {
+    orb.classList.remove("listening");
+  }
 }
 
-function toggleAudioOutput() {
-  state.voiceOutputEnabled = !state.voiceOutputEnabled;
-  const btn = document.getElementById("voice-toggle-btn");
-  const icon = document.getElementById("voice-icon");
-  const label = document.getElementById("voice-label");
-
-  if (state.voiceOutputEnabled) {
-    btn.classList.add("active");
-    icon.innerText = "🔊";
-    label.innerText = "Voice ON";
+function setOrbSpeaking(speaking) {
+  const orb = document.getElementById("main-voice-orb");
+  if (!orb) return;
+  if (speaking) {
+    orb.classList.add("speaking");
+    orb.classList.remove("listening");
   } else {
-    btn.classList.remove("active");
-    icon.innerText = "🔇";
-    label.innerText = "Voice Muted";
-    if (window.speechSynthesis) window.speechSynthesis.cancel();
+    orb.classList.remove("speaking");
+  }
+}
+
+function setOrbCaption(text) {
+  const captionEl = document.getElementById("voice-caption-text");
+  if (captionEl) {
+    captionEl.innerText = `"${text}"`;
   }
 }
 
@@ -128,9 +174,8 @@ function playSpeech(text, lang) {
   window.speechSynthesis.cancel();
   const utterance = new SpeechSynthesisUtterance(text);
   utterance.lang = lang === "hi" ? "hi-IN" : "en-IN";
-  utterance.rate = 0.95; // Clear and polite pacing for citizens
+  utterance.rate = 0.95;
 
-  // Try to pick an authentic Indian voice
   const voices = window.speechSynthesis.getVoices();
   const indianVoice = voices.find(v => v.lang.includes("IN") || v.name.includes("India") || (lang === "hi" && v.lang.startsWith("hi")));
   if (indianVoice) {
@@ -138,13 +183,13 @@ function playSpeech(text, lang) {
   }
 
   utterance.onstart = () => {
-    setWaveformActive(true);
-    document.getElementById("voice-indicator-status").innerText = "Agent Speaking • सुविधा वाणी बोल रही है...";
+    setOrbSpeaking(true);
+    document.getElementById("orb-status-indicator").innerText = "🔊 Suvidha AI Speaking...";
   };
 
   utterance.onend = () => {
-    setWaveformActive(false);
-    document.getElementById("voice-indicator-status").innerText = "Mic Ready • Click Mic or Type Below";
+    setOrbSpeaking(false);
+    document.getElementById("orb-status-indicator").innerText = "🎙️ Tap Orb or Mic to Speak";
   };
 
   window.speechSynthesis.speak(utterance);
@@ -172,7 +217,6 @@ function switchView(viewName) {
     }
   });
 
-  // View specific refreshes
   if (viewName === "dashboard") refreshDashboard();
   if (viewName === "catalog") renderCatalog(state.catalogSchemes);
   if (viewName === "compare") populateCompareDropdowns();
@@ -184,12 +228,11 @@ function changeLanguage(lang) {
   if (state.recognition) {
     state.recognition.lang = lang === "hi" ? "hi-IN" : "en-IN";
   }
-  // Re-render UI with language preferences if needed
-  console.log("Language switched to:", lang);
+  document.getElementById("app-lang-select").value = lang;
 }
 
 // ==========================================
-// VOICE ASSISTANT CHAT LOGIC
+// VOICE CONVERSATION LOGIC
 // ==========================================
 function submitUserMessage(optionalText) {
   const inputEl = document.getElementById("chat-text-input");
@@ -197,11 +240,9 @@ function submitUserMessage(optionalText) {
   if (!text) return;
 
   inputEl.value = "";
-  appendMessage("user", text);
+  document.getElementById("orb-status-indicator").innerText = "⏳ Thinking & Evaluating Rules...";
+  setOrbCaption(`You: "${text}"`);
 
-  // Call API
-  document.getElementById("voice-indicator-status").innerText = "Analyzing rules & profile...";
-  
   fetch("/api/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -217,8 +258,9 @@ function submitUserMessage(optionalText) {
   })
   .catch(err => {
     console.error("Chat turn error:", err);
-    appendMessage("agent", "माफ कीजिये, सर्वर से संपर्क नहीं हो पाया। कृपया पुनः प्रयास करें। (Connection error, please try again.)");
-    document.getElementById("voice-indicator-status").innerText = "Ready • Click Mic or Type Below";
+    const errMsg = "माफ कीजिये, सर्वर से संपर्क नहीं हो पाया। कृपया पुनः प्रयास करें।";
+    setOrbCaption(errMsg);
+    playSpeech(errMsg, state.language);
   });
 }
 
@@ -229,8 +271,15 @@ function handleInputKey(event) {
 }
 
 function sendQuickPrompt(promptText) {
-  document.getElementById("chat-text-input").value = promptText;
+  const drawer = document.getElementById("quick-prompts-drawer");
+  if (drawer) drawer.style.display = "none";
   submitUserMessage(promptText);
+}
+
+function toggleQuickPromptsDrawer() {
+  const d = document.getElementById("quick-prompts-drawer");
+  if (!d) return;
+  d.style.display = d.style.display === "none" ? "block" : "none";
 }
 
 function handleAgentResponse(data) {
@@ -239,68 +288,24 @@ function handleAgentResponse(data) {
   state.evaluations = data.schemes_evaluation || [];
 
   const spoken = data.spoken_text || data.agent_message_hi || data.agent_message_en;
-  
-  // Create badges for message tags
-  const tags = [];
-  if (data.contradiction) {
-    tags.push({ type: "tag-contradiction", label: `⚠️ Contradiction Detected: ${data.contradiction.slot}` });
-  }
-  if (data.disambiguation) {
-    tags.push({ type: "tag-vague", label: `💡 Vague Answer Clarification: ${data.disambiguation.slot}` });
-  }
-  if (data.slots_extracted_this_turn && Object.keys(data.slots_extracted_this_turn).length > 0) {
-    const slotsStr = Object.entries(data.slots_extracted_this_turn).map(([k, v]) => `${k}=${v}`).join(", ");
-    tags.push({ type: "tag-slots", label: `🏷️ Extracted: ${slotsStr}` });
-  }
-
-  appendMessage("agent", spoken, tags);
+  setOrbCaption(spoken);
   playSpeech(spoken, data.current_language || state.language);
 
-  // Update Co-pilot Sidebar
-  updateSlotInspector(data.caller_profile);
-  updateSidebarMatches(data.schemes_evaluation);
-}
+  // Update real-time floating pill if eligible schemes found
+  const eligibleSchemes = state.evaluations.filter(e => e.status === "ELIGIBLE");
+  const floatingPill = document.getElementById("floating-match-pill");
+  const floatingCount = document.getElementById("floating-match-count");
 
-function appendMessage(role, text, tags = []) {
-  const container = document.getElementById("chat-messages");
-  const msgDiv = document.createElement("div");
-  msgDiv.className = `chat-message ${role}`;
-
-  const avatar = document.createElement("div");
-  avatar.className = "message-avatar";
-  avatar.innerText = role === "agent" ? "🤖" : "👤";
-
-  const bubble = document.createElement("div");
-  bubble.className = "message-bubble";
-
-  const textNode = document.createElement("div");
-  textNode.innerText = text;
-  bubble.appendChild(textNode);
-
-  if (tags && tags.length > 0) {
-    const tagsContainer = document.createElement("div");
-    tagsContainer.style.display = "flex";
-    tagsContainer.style.flexWrap = "wrap";
-    tagsContainer.style.gap = "4px";
-    tags.forEach(t => {
-      const span = document.createElement("span");
-      span.className = `alert-tag ${t.type}`;
-      span.innerText = t.label;
-      tagsContainer.appendChild(span);
-    });
-    bubble.appendChild(tagsContainer);
+  if (eligibleSchemes.length > 0) {
+    floatingPill.style.display = "inline-flex";
+    floatingCount.innerText = `🎉 ${eligibleSchemes.length} Scheme(s) Eligible (${eligibleSchemes.map(s => s.name_en.split('(')[0].trim()).slice(0, 2).join(", ")})`;
+  } else {
+    floatingPill.style.display = "none";
   }
 
-  const timeDiv = document.createElement("div");
-  timeDiv.className = "msg-timestamp";
-  const now = new Date();
-  timeDiv.innerText = `${now.getHours()}:${now.getMinutes().toString().padStart(2, '0')}`;
-  bubble.appendChild(timeDiv);
-
-  msgDiv.appendChild(avatar);
-  msgDiv.appendChild(bubble);
-  container.appendChild(msgDiv);
-  container.scrollTop = container.scrollHeight;
+  // Sync drawer data
+  updateSlotInspector(data.caller_profile);
+  updateDrawerMatches(data.schemes_evaluation);
 }
 
 function resetConversation() {
@@ -311,19 +316,28 @@ function resetConversation() {
   })
   .then(res => res.json())
   .then(data => {
-    const container = document.getElementById("chat-messages");
-    container.innerHTML = "";
-    appendMessage("agent", data.greeting_message || "नमस्ते! मैं सुविधा वाणी हूँ, आपका सरकारी योजना सहायक। आप क्या काम करते हैं और क्या सहायता चाहते हैं?");
-    playSpeech(data.greeting_message, state.language);
+    const greeting = data.greeting_message || "नमस्ते! मैं सुविधा वाणी हूँ, आपका सरकारी योजना सहायक। आप क्या काम करते हैं और क्या सहायता चाहते हैं?";
+    setOrbCaption(greeting);
+    playSpeech(greeting, state.language);
     updateSlotInspector({});
-    updateSidebarMatches([]);
-    document.getElementById("slot-turn-counter").innerText = "Turns: 0";
+    updateDrawerMatches([]);
+    document.getElementById("floating-match-pill").style.display = "none";
   });
 }
 
 // ==========================================
-// SLOT INSPECTOR & SIDEBAR MATCHES
+// DETAILS DRAWER (LIVE SLOTS & SCHEMES)
 // ==========================================
+function openDetailsDrawer() {
+  document.getElementById("details-drawer-modal").classList.add("active");
+  updateSlotInspector(state.currentProfile);
+  updateDrawerMatches(state.evaluations);
+}
+
+function closeDetailsDrawer() {
+  document.getElementById("details-drawer-modal").classList.remove("active");
+}
+
 function updateSlotInspector(profile) {
   const p = profile || {};
   document.getElementById("slot-age").innerText = p.age ? `${p.age} yrs` : "--";
@@ -333,7 +347,7 @@ function updateSlotInspector(profile) {
   document.getElementById("slot-area").innerText = p.area_type || "--";
   document.getElementById("slot-house").innerText = p.house_type || "--";
   document.getElementById("slot-bpl").innerText = p.bpl_status ? "BPL (Yes)" : (p.bpl_status === false ? "No" : "--");
-  document.getElementById("slot-tax").innerText = p.is_tax_payer ? "Taxpayer (Yes)" : (p.is_tax_payer === false ? "Non-Taxpayer" : "--");
+  document.getElementById("slot-tax").innerText = p.is_tax_payer ? "Taxpayer" : (p.is_tax_payer === false ? "Non-Taxpayer" : "--");
 
   document.querySelectorAll(".slot-val").forEach(el => {
     if (el.innerText !== "--") el.classList.remove("empty");
@@ -341,35 +355,34 @@ function updateSlotInspector(profile) {
   });
 }
 
-function updateSidebarMatches(evaluations) {
-  const container = document.getElementById("sidebar-matches-list");
+function updateDrawerMatches(evaluations) {
+  const container = document.getElementById("drawer-matches-list");
+  if (!container) return;
   container.innerHTML = "";
 
   if (!evaluations || evaluations.length === 0) {
-    container.innerHTML = `<div style="font-size:12px; color:#64748B; text-align:center; padding:20px 0;">No schemes evaluated yet.</div>`;
-    document.getElementById("eligible-badge-count").innerText = "0 Eligible";
+    container.innerHTML = `<div style="font-size:12px; color:#64748B; text-align:center; padding:16px 0;">Speak with the agent to evaluate schemes in real-time.</div>`;
     return;
   }
 
-  const eligibleCount = evaluations.filter(e => e.status === "ELIGIBLE").length;
-  document.getElementById("eligible-badge-count").innerText = `${eligibleCount} Eligible`;
-
   evaluations.slice(0, 6).forEach(sch => {
     const card = document.createElement("div");
-    card.className = `match-card ${sch.status.toLowerCase()}`;
-
+    card.className = "scheme-card";
     const titleLang = state.language === "hi" ? sch.name_hi : sch.name_en;
     const benefitsLang = state.language === "hi" ? sch.benefits_hi : sch.benefits_en;
 
     card.innerHTML = `
-      <div class="match-card-header">
-        <span class="match-name">${titleLang}</span>
-        <span class="status-badge ${sch.status.toLowerCase()}">${sch.status.replace('_', ' ')}</span>
+      <div>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+          <span class="status-badge ${sch.status.toLowerCase()}">${sch.status.replace('_', ' ')}</span>
+          <span style="font-size:11px; color:#64748B;">Score: ${(sch.match_score * 100).toFixed(0)}%</span>
+        </div>
+        <h3 style="font-size:14px; margin-bottom:4px;">${titleLang}</h3>
+        <p style="font-size:12px; color:#475569;">${benefitsLang.substring(0, 95)}...</p>
       </div>
-      <div class="match-benefit">${benefitsLang.substring(0, 85)}...</div>
-      <div class="match-actions">
-        <button class="btn-explain" onclick="openExplainModal('${sch.scheme_id}')">🔍 Explain Reason</button>
-        <button class="btn-explain" onclick="saveSchemeBookmark('${sch.scheme_id}')">📌 Bookmark</button>
+      <div style="margin-top:10px; display:flex; justify-content:space-between;">
+        <button class="btn-secondary" style="font-size:11px; padding:4px 8px;" onclick="openExplainModal('${sch.scheme_id}')">Explain Rules</button>
+        <button class="btn-primary" style="font-size:11px; padding:4px 8px;" onclick="saveSchemeBookmark('${sch.scheme_id}')">Bookmark</button>
       </div>
     `;
     container.appendChild(card);
@@ -383,7 +396,6 @@ function openExplainModal(schemeId) {
   const schemeEval = state.evaluations.find(e => e.scheme_id === schemeId);
   const rawScheme = state.catalogSchemes.find(s => s.id === schemeId);
   const modal = document.getElementById("explain-modal");
-
   if (!schemeEval && !rawScheme) return;
 
   const title = state.language === "hi" ? (schemeEval?.name_hi || rawScheme?.name_hi) : (schemeEval?.name_en || rawScheme?.name_en);
@@ -418,7 +430,7 @@ function openExplainModal(schemeId) {
       tbody.appendChild(tr);
     });
   } else {
-    tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:#64748B;">Use the Voice Assistant or Profile Form to run deterministic rule matching.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:#64748B;">Use the Voice Agent or Profile Form to run deterministic rule matching.</td></tr>`;
   }
 
   const appSteps = state.language === "hi" ? (schemeEval?.application_steps_hi || rawScheme?.application_steps_hi) : (schemeEval?.application_steps_en || rawScheme?.application_steps_en);
@@ -608,8 +620,8 @@ function renderDocumentChecklist() {
 
       const item = document.createElement("div");
       item.style.background = "white";
-      item.style.border = "1px solid #CBD5E1";
-      item.style.borderRadius = "8px";
+      item.style.border = "1px solid #E2E8F0";
+      item.style.borderRadius = "10px";
       item.style.padding = "14px 18px";
       item.style.display = "flex";
       item.style.justifyContent = "space-between";
@@ -648,7 +660,7 @@ function refreshDashboard() {
       recContainer.innerHTML = "";
       const recs = data.eligible_schemes.concat(data.likely_schemes);
       if (recs.length === 0) {
-        recContainer.innerHTML = `<p style="color:#64748B; font-size:13px;">No schemes matched yet. Talk to the Voice Assistant or complete the Profile Form.</p>`;
+        recContainer.innerHTML = `<p style="color:#64748B; font-size:13px;">No schemes matched yet. Speak with the Voice Agent to evaluate your benefits.</p>`;
       } else {
         recs.forEach(s => {
           const div = document.createElement("div");
@@ -678,44 +690,6 @@ function saveSchemeBookmark(schemeId) {
     alert("Scheme successfully bookmarked to your Citizen Dashboard!");
     refreshDashboard();
   });
-}
-
-// ==========================================
-// CITIZEN PROFILE FORM
-// ==========================================
-function handleManualProfileSubmit(event) {
-  event.preventDefault();
-  const req = {
-    age: parseInt(document.getElementById("form-age").value) || null,
-    gender: document.getElementById("form-gender").value || null,
-    occupation: document.getElementById("form-occupation").value || null,
-    annual_income: parseFloat(document.getElementById("form-income").value) || null,
-    area_type: document.getElementById("form-area").value || null,
-    house_type: document.getElementById("form-house").value || null,
-    land_ha: parseFloat(document.getElementById("form-land").value) || null,
-    has_land: parseFloat(document.getElementById("form-land").value) > 0,
-    bpl_status: document.getElementById("form-bpl").value === "true" ? true : (document.getElementById("form-bpl").value === "false" ? false : null),
-    is_tax_payer: document.getElementById("form-tax").value === "true",
-    has_girl_child_under_10: document.getElementById("form-girl-child").value === "true" ? true : null
-  };
-
-  fetch("/api/eligibility/evaluate", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(req)
-  })
-  .then(res => res.json())
-  .then(data => {
-    state.evaluations = data.evaluations;
-    state.currentProfile = data.profile;
-    updateSlotInspector(data.profile);
-    updateSidebarMatches(data.evaluations);
-    switchView("dashboard");
-  });
-}
-
-function resetProfileForm() {
-  document.getElementById("profile-manual-form").reset();
 }
 
 // ==========================================
