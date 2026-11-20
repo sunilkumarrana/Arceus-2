@@ -1,7 +1,7 @@
 /**
  * सुविधा वाणी (SuvidhaVani) - Client Application Controller
- * Features the ChatGPT-style Voice Orb UI, Clean Starting Page Intake,
- * Real-time STT / TTS, Deterministic Evaluation, and SIH Judge Benchmark Suite.
+ * Continuous Conversational Voice Loop (Auto-restarting Mic, ChatGPT-style Orb,
+ * Real-time Interim STT, Acoustic TTS, and SIH Judge Benchmark Suite).
  */
 
 // Application Global State
@@ -10,12 +10,19 @@ const state = {
   language: "hi", // default to Hindi
   voiceOutputEnabled: true,
   currentRole: "citizen",
-  activeView: "landing", // starts on the clean landing page
+  activeView: "landing",
   currentProfile: {},
   evaluations: [],
   catalogSchemes: [],
+  
+  // Continuous Voice State
+  voiceConversationActive: false, // True when user wants mic to stay on
   isListening: false,
+  isAgentSpeaking: false,
   recognition: null,
+  restartTimer: null,
+  silenceTimer: null,
+  accumulatedTranscript: "",
   turnCount: 0
 };
 
@@ -25,7 +32,6 @@ const state = {
 document.addEventListener("DOMContentLoaded", () => {
   initSpeech();
   loadCatalogData();
-  // Do not speak until user clicks "Continue with AI Agent" or interacts
 });
 
 // ==========================================
@@ -43,6 +49,9 @@ function continueWithAIAgent() {
   if (name) state.currentProfile.name = name;
   if (occ) state.currentProfile.occupation = occ;
   if (userState) state.currentProfile.state = userState;
+
+  // Activate continuous conversational voice mode
+  state.voiceConversationActive = true;
 
   // Switch to Voice Orb Screen
   switchView("voice");
@@ -64,53 +73,131 @@ function continueWithAIAgent() {
   }
 
   setOrbCaption(introMsg);
-  playSpeech(introMsg, lang);
+  
+  // Play speech; when speech finishes, the continuous mic will automatically engage!
+  playSpeech(introMsg, lang, () => {
+    if (state.voiceConversationActive) {
+      startListeningSafe();
+    }
+  });
 
-  // If initial slots were provided, sync slot inspector
   updateSlotInspector(state.currentProfile);
 }
 
 // ==========================================
-// SPEECH RECOGNITION (STT) & SYNTHESIS (TTS)
+// CONTINUOUS SPEECH RECOGNITION (STT)
 // ==========================================
 function initSpeech() {
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (SpeechRecognition) {
-    state.recognition = new SpeechRecognition();
-    state.recognition.continuous = false;
-    state.recognition.interimResults = false;
-    state.recognition.lang = state.language === "hi" ? "hi-IN" : "en-IN";
-
-    state.recognition.onstart = () => {
-      state.isListening = true;
-      updateMicUI(true);
-      setOrbListening(true);
-      document.getElementById("orb-status-indicator").innerText = "🔴 Listening... बोलिए...";
-    };
-
-    state.recognition.onresult = (event) => {
-      const transcript = event.results[0][0].transcript;
-      document.getElementById("chat-text-input").value = transcript;
-      submitUserMessage(transcript);
-    };
-
-    state.recognition.onerror = (event) => {
-      console.warn("Speech recognition error:", event.error);
-      state.isListening = false;
-      updateMicUI(false);
-      setOrbListening(false);
-      document.getElementById("orb-status-indicator").innerText = "🎙️ Tap Orb or Mic to Speak";
-    };
-
-    state.recognition.onend = () => {
-      state.isListening = false;
-      updateMicUI(false);
-      setOrbListening(false);
-      document.getElementById("orb-status-indicator").innerText = "🎙️ Tap Orb or Mic to Speak";
-    };
-  } else {
+  if (!SpeechRecognition) {
     console.info("Web Speech API not supported in this browser. Fallback to text input.");
+    return;
   }
+
+  state.recognition = new SpeechRecognition();
+  // CONTINUOUS = TRUE keeps listening through pauses!
+  state.recognition.continuous = true;
+  // INTERIM RESULTS = TRUE shows text in real-time as user speaks
+  state.recognition.interimResults = true;
+  state.recognition.lang = state.language === "hi" ? "hi-IN" : "en-IN";
+
+  state.recognition.onstart = () => {
+    state.isListening = true;
+    updateMicUI(true);
+    setOrbListening(true);
+    const statusText = state.language === "hi" ? "🔴 माइक चालू है • बोलिए..." : "🔴 Listening... Speak naturally";
+    document.getElementById("orb-status-indicator").innerText = statusText;
+  };
+
+  state.recognition.onresult = (event) => {
+    let interimTranscript = "";
+    let finalTranscript = "";
+
+    for (let i = event.resultIndex; i < event.results.length; ++i) {
+      const transcript = event.results[i][0].transcript;
+      if (event.results[i].isFinal) {
+        finalTranscript += transcript + " ";
+      } else {
+        interimTranscript += transcript;
+      }
+    }
+
+    const currentText = (finalTranscript || interimTranscript).trim();
+    if (currentText) {
+      document.getElementById("chat-text-input").value = currentText;
+      setOrbCaption(`You: "${currentText}"`);
+
+      // Silence Detection: wait for 1.3 seconds of pause after user stops speaking, then submit!
+      clearTimeout(state.silenceTimer);
+      state.silenceTimer = setTimeout(() => {
+        const textToSubmit = document.getElementById("chat-text-input").value.trim();
+        if (textToSubmit && textToSubmit.length >= 2) {
+          submitUserMessage(textToSubmit);
+        }
+      }, 1300);
+    }
+  };
+
+  state.recognition.onerror = (event) => {
+    console.warn("Speech recognition event:", event.error);
+
+    // If "no-speech" or "aborted", DO NOT turn off mic if user wants voice conversation!
+    if (event.error === "no-speech" || event.error === "aborted") {
+      // Keep state active, onend will auto-restart
+      return;
+    }
+
+    if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+      state.voiceConversationActive = false;
+      state.isListening = false;
+      updateMicUI(false);
+      setOrbListening(false);
+      document.getElementById("orb-status-indicator").innerText = "⚠️ Mic permission blocked in browser settings";
+      return;
+    }
+  };
+
+  state.recognition.onend = () => {
+    state.isListening = false;
+    
+    // AUTO-RESTART LOOP:
+    // If voice conversation is active and AI is not speaking and we are on voice view, RESTART IMMEDIATELY!
+    if (state.voiceConversationActive && !state.isAgentSpeaking && state.activeView === "voice") {
+      clearTimeout(state.restartTimer);
+      state.restartTimer = setTimeout(() => {
+        startListeningSafe();
+      }, 250);
+    } else {
+      updateMicUI(false);
+      setOrbListening(false);
+      if (!state.isAgentSpeaking) {
+        document.getElementById("orb-status-indicator").innerText = "🎙️ Mic Muted • Tap to Speak";
+      }
+    }
+  };
+}
+
+function startListeningSafe() {
+  if (!state.recognition || state.isListening || state.isAgentSpeaking) return;
+  state.recognition.lang = state.language === "hi" ? "hi-IN" : "en-IN";
+  try {
+    state.recognition.start();
+  } catch (e) {
+    // If recognition is already starting/active, ignore DOMException
+  }
+}
+
+function stopListeningForAgent() {
+  clearTimeout(state.restartTimer);
+  clearTimeout(state.silenceTimer);
+  if (state.recognition && state.isListening) {
+    try {
+      state.recognition.stop();
+    } catch (e) {}
+  }
+  state.isListening = false;
+  updateMicUI(false);
+  setOrbListening(false);
 }
 
 function toggleVoiceInput() {
@@ -118,24 +205,28 @@ function toggleVoiceInput() {
     alert("Web Speech API is not supported in this browser. Please type in the input bar below.");
     return;
   }
-  if (state.isListening) {
-    state.recognition.stop();
+
+  if (state.isListening || state.voiceConversationActive) {
+    // Explicit User Toggle OFF
+    state.voiceConversationActive = false;
+    stopListeningForAgent();
+    document.getElementById("orb-status-indicator").innerText = "🎙️ Mic Muted • Tap to Speak";
   } else {
-    state.recognition.lang = state.language === "hi" ? "hi-IN" : "en-IN";
-    try {
-      state.recognition.start();
-    } catch (e) {
-      console.warn("Recognition already active", e);
-    }
+    // Explicit User Toggle ON (Continuous Conversational Mode)
+    state.voiceConversationActive = true;
+    startListeningSafe();
   }
 }
 
 function updateMicUI(listening) {
   const micBtn = document.getElementById("mic-btn");
+  if (!micBtn) return;
   if (listening) {
     micBtn.classList.add("listening");
+    micBtn.innerHTML = "🔴";
   } else {
     micBtn.classList.remove("listening");
+    micBtn.innerHTML = "🎤";
   }
 }
 
@@ -168,8 +259,18 @@ function setOrbCaption(text) {
   }
 }
 
-function playSpeech(text, lang) {
-  if (!state.voiceOutputEnabled || !window.speechSynthesis) return;
+// ==========================================
+// SPEECH SYNTHESIS (TTS)
+// ==========================================
+function playSpeech(text, lang, onEndCallback) {
+  if (!state.voiceOutputEnabled || !window.speechSynthesis) {
+    if (onEndCallback) onEndCallback();
+    return;
+  }
+
+  // Prevent mic from listening to agent's own speech output
+  stopListeningForAgent();
+  state.isAgentSpeaking = true;
 
   window.speechSynthesis.cancel();
   const utterance = new SpeechSynthesisUtterance(text);
@@ -188,8 +289,25 @@ function playSpeech(text, lang) {
   };
 
   utterance.onend = () => {
+    state.isAgentSpeaking = false;
     setOrbSpeaking(false);
-    document.getElementById("orb-status-indicator").innerText = "🎙️ Tap Orb or Mic to Speak";
+    
+    // Once agent finishes speaking, automatically resume listening if in conversational mode!
+    if (onEndCallback) {
+      onEndCallback();
+    } else if (state.voiceConversationActive && state.activeView === "voice") {
+      startListeningSafe();
+    } else {
+      document.getElementById("orb-status-indicator").innerText = "🎙️ Tap Orb or Mic to Speak";
+    }
+  };
+
+  utterance.onerror = () => {
+    state.isAgentSpeaking = false;
+    setOrbSpeaking(false);
+    if (state.voiceConversationActive && state.activeView === "voice") {
+      startListeningSafe();
+    }
   };
 
   window.speechSynthesis.speak(utterance);
@@ -200,6 +318,13 @@ function playSpeech(text, lang) {
 // ==========================================
 function switchView(viewName) {
   state.activeView = viewName;
+
+  // If navigating away from voice view, pause recognition
+  if (viewName !== "voice") {
+    stopListeningForAgent();
+  } else if (state.voiceConversationActive) {
+    startListeningSafe();
+  }
 
   document.querySelectorAll(".nav-item").forEach(item => {
     if (item.getAttribute("data-view") === viewName) {
@@ -239,8 +364,11 @@ function submitUserMessage(optionalText) {
   const text = (optionalText || inputEl.value || "").trim();
   if (!text) return;
 
+  // Stop listening while server processes and AI responds
+  stopListeningForAgent();
+
   inputEl.value = "";
-  document.getElementById("orb-status-indicator").innerText = "⏳ Thinking & Evaluating Rules...";
+  document.getElementById("orb-status-indicator").innerText = "⏳ Evaluating Rules & Schemes...";
   setOrbCaption(`You: "${text}"`);
 
   fetch("/api/chat", {
@@ -260,7 +388,9 @@ function submitUserMessage(optionalText) {
     console.error("Chat turn error:", err);
     const errMsg = "माफ कीजिये, सर्वर से संपर्क नहीं हो पाया। कृपया पुनः प्रयास करें।";
     setOrbCaption(errMsg);
-    playSpeech(errMsg, state.language);
+    playSpeech(errMsg, state.language, () => {
+      if (state.voiceConversationActive) startListeningSafe();
+    });
   });
 }
 
@@ -273,6 +403,7 @@ function handleInputKey(event) {
 function sendQuickPrompt(promptText) {
   const drawer = document.getElementById("quick-prompts-drawer");
   if (drawer) drawer.style.display = "none";
+  state.voiceConversationActive = true;
   submitUserMessage(promptText);
 }
 
@@ -289,9 +420,15 @@ function handleAgentResponse(data) {
 
   const spoken = data.spoken_text || data.agent_message_hi || data.agent_message_en;
   setOrbCaption(spoken);
-  playSpeech(spoken, data.current_language || state.language);
 
-  // Update real-time floating pill if eligible schemes found
+  // Play speech with automatic mic restart callback
+  playSpeech(spoken, data.current_language || state.language, () => {
+    if (state.voiceConversationActive && state.activeView === "voice") {
+      startListeningSafe();
+    }
+  });
+
+  // Update floating match pill
   const eligibleSchemes = state.evaluations.filter(e => e.status === "ELIGIBLE");
   const floatingPill = document.getElementById("floating-match-pill");
   const floatingCount = document.getElementById("floating-match-count");
@@ -303,12 +440,14 @@ function handleAgentResponse(data) {
     floatingPill.style.display = "none";
   }
 
-  // Sync drawer data
   updateSlotInspector(data.caller_profile);
   updateDrawerMatches(data.schemes_evaluation);
 }
 
 function resetConversation() {
+  state.voiceConversationActive = false;
+  stopListeningForAgent();
+
   fetch("/api/chat/reset", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -318,10 +457,10 @@ function resetConversation() {
   .then(data => {
     const greeting = data.greeting_message || "नमस्ते! मैं सुविधा वाणी हूँ, आपका सरकारी योजना सहायक। आप क्या काम करते हैं और क्या सहायता चाहते हैं?";
     setOrbCaption(greeting);
-    playSpeech(greeting, state.language);
     updateSlotInspector({});
     updateDrawerMatches([]);
     document.getElementById("floating-match-pill").style.display = "none";
+    document.getElementById("orb-status-indicator").innerText = "🎙️ Tap Orb or Mic to Speak";
   });
 }
 
