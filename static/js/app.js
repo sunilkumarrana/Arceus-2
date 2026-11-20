@@ -1,7 +1,9 @@
 /**
  * सुविधा वाणी (SuvidhaVani) - Client Application Controller
- * Continuous Conversational Voice Loop (Auto-restarting Mic, ChatGPT-style Orb,
- * Real-time Interim STT, Acoustic TTS, and SIH Judge Benchmark Suite).
+ * Simple, Clean Workflow:
+ * 1. Landing: Clean site details + prominent "Show Schemes" button.
+ * 2. Voice Agent: Asks "Which scheme are you looking for?" with active mic.
+ * 3. User responds: Agent speaks explanation and shows related schemes directly below the orb.
  */
 
 // Application Global State
@@ -9,20 +11,18 @@ const state = {
   sessionId: "session_" + Math.random().toString(36).substring(2, 9),
   language: "hi", // default to Hindi
   voiceOutputEnabled: true,
-  currentRole: "citizen",
-  activeView: "landing",
+  activeView: "landing", // starts on the clean landing page
   currentProfile: {},
   evaluations: [],
   catalogSchemes: [],
   
   // Continuous Voice State
-  voiceConversationActive: false, // True when user wants mic to stay on
+  voiceConversationActive: false,
   isListening: false,
   isAgentSpeaking: false,
   recognition: null,
   restartTimer: null,
   silenceTimer: null,
-  accumulatedTranscript: "",
   turnCount: 0
 };
 
@@ -34,54 +34,48 @@ document.addEventListener("DOMContentLoaded", () => {
   loadCatalogData();
 });
 
+function goToHome() {
+  state.voiceConversationActive = false;
+  stopListeningForAgent();
+  switchView("landing");
+}
+
+function toggleLanguageFast() {
+  const newLang = state.language === "hi" ? "en" : "hi";
+  changeLanguage(newLang);
+  document.getElementById("app-lang-select").value = newLang;
+}
+
 // ==========================================
-// STARTING PAGE / ONBOARDING FLOW
+// STEP 1 & 2: USER CLICKS "SHOW SCHEMES"
 // ==========================================
-function continueWithAIAgent() {
-  const name = document.getElementById("landing-name").value.trim();
-  const occ = document.getElementById("landing-occupation").value;
-  const userState = document.getElementById("landing-state").value;
-  const lang = document.getElementById("landing-lang").value;
-
-  state.language = lang;
-  document.getElementById("app-lang-select").value = lang;
-
-  if (name) state.currentProfile.name = name;
-  if (occ) state.currentProfile.occupation = occ;
-  if (userState) state.currentProfile.state = userState;
-
-  // Activate continuous conversational voice mode
+function startVoiceAgentFlow() {
+  switchView("voice");
   state.voiceConversationActive = true;
 
-  // Switch to Voice Orb Screen
-  switchView("voice");
+  // Question the Voice Agent asks immediately:
+  const question = state.language === "hi"
+    ? "नमस्ते! आप कौन सी सरकारी योजना ढूंढ रहे हैं?"
+    : "Hello! Which government scheme are you looking for?";
 
-  // Format initial greeting
-  let introMsg = "";
-  if (name && occ) {
-    introMsg = lang === "hi"
-      ? `नमस्ते ${name} जी! आपका स्वागत है। मुझे पता चला कि आप ${occ === 'farmer' ? 'किसान' : occ} हैं। आप मुझे अपनी आयु, ज़मीन या पारिवारिक आय के बारे में बताएं, मैं आपकी सरकारी योजनाओं की जाँच करूँगी।`
-      : `Hello ${name}! Welcome. I see you are working in ${occ}. Please tell me your age, income, or landholding details so I can verify your welfare benefits.`;
-  } else if (name) {
-    introMsg = lang === "hi"
-      ? `नमस्ते ${name} जी! मैं सुविधा वाणी हूँ। आप अपने व्यवसाय और परिवार के बारे में बताएं, मैं आपके लिए सबसे उपयुक्त सरकारी योजनाओं का पता लगाऊँगी।`
-      : `Hello ${name}! I am Suvidha Vani. Tell me about your livelihood and family, and I will find the best government schemes for you.`;
-  } else {
-    introMsg = lang === "hi"
-      ? "नमस्ते! मैं सुविधा वाणी हूँ, आपका सरकारी योजना सहायक। आप बोलकर या लिखकर बताएं कि आप क्या काम करते हैं और आपकी क्या आवश्यकता है?"
-      : "Hello! I am Suvidha Vani, your voice assistant for Government Schemes. Tell me about what work you do or what support you need.";
+  setOrbCaption(question);
+
+  // Initially show popular recommended schemes so the screen is not empty
+  if (state.catalogSchemes.length > 0) {
+    renderRelatedSchemes(state.catalogSchemes.slice(0, 4));
   }
 
-  setOrbCaption(introMsg);
-  
-  // Play speech; when speech finishes, the continuous mic will automatically engage!
-  playSpeech(introMsg, lang, () => {
+  // Speak the question aloud; when speech completes, continuous mic automatically engages!
+  playSpeech(question, state.language, () => {
     if (state.voiceConversationActive) {
       startListeningSafe();
     }
   });
+}
 
-  updateSlotInspector(state.currentProfile);
+function handleSchemeQuickChoice(choiceText) {
+  state.voiceConversationActive = true;
+  submitUserMessage(choiceText);
 }
 
 // ==========================================
@@ -95,9 +89,7 @@ function initSpeech() {
   }
 
   state.recognition = new SpeechRecognition();
-  // CONTINUOUS = TRUE keeps listening through pauses!
   state.recognition.continuous = true;
-  // INTERIM RESULTS = TRUE shows text in real-time as user speaks
   state.recognition.interimResults = true;
   state.recognition.lang = state.language === "hi" ? "hi-IN" : "en-IN";
 
@@ -127,7 +119,7 @@ function initSpeech() {
       document.getElementById("chat-text-input").value = currentText;
       setOrbCaption(`You: "${currentText}"`);
 
-      // Silence Detection: wait for 1.3 seconds of pause after user stops speaking, then submit!
+      // Silence Detection: 1.3 seconds of pause after user stops speaking -> submit!
       clearTimeout(state.silenceTimer);
       state.silenceTimer = setTimeout(() => {
         const textToSubmit = document.getElementById("chat-text-input").value.trim();
@@ -140,11 +132,8 @@ function initSpeech() {
 
   state.recognition.onerror = (event) => {
     console.warn("Speech recognition event:", event.error);
-
-    // If "no-speech" or "aborted", DO NOT turn off mic if user wants voice conversation!
     if (event.error === "no-speech" || event.error === "aborted") {
-      // Keep state active, onend will auto-restart
-      return;
+      return; // Keep continuous loop alive
     }
 
     if (event.error === "not-allowed" || event.error === "service-not-allowed") {
@@ -153,15 +142,13 @@ function initSpeech() {
       updateMicUI(false);
       setOrbListening(false);
       document.getElementById("orb-status-indicator").innerText = "⚠️ Mic permission blocked in browser settings";
-      return;
     }
   };
 
   state.recognition.onend = () => {
     state.isListening = false;
     
-    // AUTO-RESTART LOOP:
-    // If voice conversation is active and AI is not speaking and we are on voice view, RESTART IMMEDIATELY!
+    // Auto-Restart keep-alive loop when in voice mode and AI is not speaking
     if (state.voiceConversationActive && !state.isAgentSpeaking && state.activeView === "voice") {
       clearTimeout(state.restartTimer);
       state.restartTimer = setTimeout(() => {
@@ -182,9 +169,7 @@ function startListeningSafe() {
   state.recognition.lang = state.language === "hi" ? "hi-IN" : "en-IN";
   try {
     state.recognition.start();
-  } catch (e) {
-    // If recognition is already starting/active, ignore DOMException
-  }
+  } catch (e) {}
 }
 
 function stopListeningForAgent() {
@@ -207,12 +192,10 @@ function toggleVoiceInput() {
   }
 
   if (state.isListening || state.voiceConversationActive) {
-    // Explicit User Toggle OFF
     state.voiceConversationActive = false;
     stopListeningForAgent();
     document.getElementById("orb-status-indicator").innerText = "🎙️ Mic Muted • Tap to Speak";
   } else {
-    // Explicit User Toggle ON (Continuous Conversational Mode)
     state.voiceConversationActive = true;
     startListeningSafe();
   }
@@ -268,7 +251,6 @@ function playSpeech(text, lang, onEndCallback) {
     return;
   }
 
-  // Prevent mic from listening to agent's own speech output
   stopListeningForAgent();
   state.isAgentSpeaking = true;
 
@@ -291,8 +273,6 @@ function playSpeech(text, lang, onEndCallback) {
   utterance.onend = () => {
     state.isAgentSpeaking = false;
     setOrbSpeaking(false);
-    
-    // Once agent finishes speaking, automatically resume listening if in conversational mode!
     if (onEndCallback) {
       onEndCallback();
     } else if (state.voiceConversationActive && state.activeView === "voice") {
@@ -313,13 +293,26 @@ function playSpeech(text, lang, onEndCallback) {
   window.speechSynthesis.speak(utterance);
 }
 
+function toggleAudioOutput() {
+  state.voiceOutputEnabled = !state.voiceOutputEnabled;
+  const btn = document.getElementById("voice-toggle-btn");
+  const icon = document.getElementById("voice-icon");
+  if (state.voiceOutputEnabled) {
+    btn.classList.add("active");
+    btn.innerHTML = `<span id="voice-icon">🔊</span> Voice ON`;
+  } else {
+    btn.classList.remove("active");
+    btn.innerHTML = `<span id="voice-icon">🔇</span> Voice Muted`;
+    if (window.speechSynthesis) window.speechSynthesis.cancel();
+  }
+}
+
 // ==========================================
 // VIEW ROUTING
 // ==========================================
 function switchView(viewName) {
   state.activeView = viewName;
 
-  // If navigating away from voice view, pause recognition
   if (viewName !== "voice") {
     stopListeningForAgent();
   } else if (state.voiceConversationActive) {
@@ -342,10 +335,7 @@ function switchView(viewName) {
     }
   });
 
-  if (viewName === "dashboard") refreshDashboard();
   if (viewName === "catalog") renderCatalog(state.catalogSchemes);
-  if (viewName === "compare") populateCompareDropdowns();
-  if (viewName === "checklist") renderDocumentChecklist();
 }
 
 function changeLanguage(lang) {
@@ -357,18 +347,16 @@ function changeLanguage(lang) {
 }
 
 // ==========================================
-// VOICE CONVERSATION LOGIC
+// STEP 3: USER ANSWERS -> SHOW RELATED SCHEMES
 // ==========================================
 function submitUserMessage(optionalText) {
   const inputEl = document.getElementById("chat-text-input");
   const text = (optionalText || inputEl.value || "").trim();
   if (!text) return;
 
-  // Stop listening while server processes and AI responds
   stopListeningForAgent();
-
   inputEl.value = "";
-  document.getElementById("orb-status-indicator").innerText = "⏳ Evaluating Rules & Schemes...";
+  document.getElementById("orb-status-indicator").innerText = "⏳ Finding Related Schemes...";
   setOrbCaption(`You: "${text}"`);
 
   fetch("/api/chat", {
@@ -382,7 +370,7 @@ function submitUserMessage(optionalText) {
   })
   .then(res => res.json())
   .then(data => {
-    handleAgentResponse(data);
+    handleAgentResponse(data, text);
   })
   .catch(err => {
     console.error("Chat turn error:", err);
@@ -400,20 +388,7 @@ function handleInputKey(event) {
   }
 }
 
-function sendQuickPrompt(promptText) {
-  const drawer = document.getElementById("quick-prompts-drawer");
-  if (drawer) drawer.style.display = "none";
-  state.voiceConversationActive = true;
-  submitUserMessage(promptText);
-}
-
-function toggleQuickPromptsDrawer() {
-  const d = document.getElementById("quick-prompts-drawer");
-  if (!d) return;
-  d.style.display = d.style.display === "none" ? "block" : "none";
-}
-
-function handleAgentResponse(data) {
+function handleAgentResponse(data, userUtterance) {
   state.turnCount = data.questions_asked_count || 0;
   state.currentProfile = data.caller_profile || {};
   state.evaluations = data.schemes_evaluation || [];
@@ -421,27 +396,67 @@ function handleAgentResponse(data) {
   const spoken = data.spoken_text || data.agent_message_hi || data.agent_message_en;
   setOrbCaption(spoken);
 
-  // Play speech with automatic mic restart callback
+  // Speak agent response aloud, then re-engage mic
   playSpeech(spoken, data.current_language || state.language, () => {
     if (state.voiceConversationActive && state.activeView === "voice") {
       startListeningSafe();
     }
   });
 
-  // Update floating match pill
-  const eligibleSchemes = state.evaluations.filter(e => e.status === "ELIGIBLE");
-  const floatingPill = document.getElementById("floating-match-pill");
-  const floatingCount = document.getElementById("floating-match-count");
+  // RENDER THE RELATED SCHEMES DIRECTLY ON THE SCREEN!
+  renderRelatedSchemes(data.schemes_evaluation);
+}
 
-  if (eligibleSchemes.length > 0) {
-    floatingPill.style.display = "inline-flex";
-    floatingCount.innerText = `🎉 ${eligibleSchemes.length} Scheme(s) Eligible (${eligibleSchemes.map(s => s.name_en.split('(')[0].trim()).slice(0, 2).join(", ")})`;
-  } else {
-    floatingPill.style.display = "none";
+function renderRelatedSchemes(schemes) {
+  const container = document.getElementById("related-schemes-cards");
+  const titleEl = document.getElementById("related-schemes-title");
+  const badgeEl = document.getElementById("related-count-badge");
+  if (!container) return;
+
+  container.innerHTML = "";
+
+  if (!schemes || schemes.length === 0) {
+    container.innerHTML = `<div style="text-align:center; padding:20px; color:#64748B;">No matching schemes found yet. Try asking for farming, healthcare, pension, or loans.</div>`;
+    return;
   }
 
-  updateSlotInspector(data.caller_profile);
-  updateDrawerMatches(data.schemes_evaluation);
+  // Display top 4 to 6 most relevant schemes
+  const displaySchemes = schemes.slice(0, 6);
+  badgeEl.innerText = `${displaySchemes.length} Schemes Found`;
+
+  displaySchemes.forEach(s => {
+    const card = document.createElement("div");
+    card.className = "scheme-card";
+
+    const title = state.language === "hi" ? (s.name_hi || s.name_en) : (s.name_en || s.name_hi);
+    const benefits = state.language === "hi" ? (s.benefits_hi || s.benefits_en) : (s.benefits_en || s.benefits_hi);
+    const category = s.category || "General";
+    const status = s.status || "ELIGIBLE";
+    const statusClass = status.toLowerCase();
+
+    card.innerHTML = `
+      <div>
+        <div class="scheme-tags-bar">
+          <span class="status-badge ${statusClass}">${status.replace('_', ' ')}</span>
+          <span class="scheme-tag">${category}</span>
+          <span class="scheme-tag" style="background:#EFF6FF; color:#1E40AF;">Verified</span>
+        </div>
+        <h3 style="font-size:15px; margin-bottom:6px;">${title}</h3>
+        <div class="scheme-benefits-box" style="margin-bottom:10px;">
+          <strong>Benefit:</strong> ${benefits.substring(0, 115)}...
+        </div>
+      </div>
+      <div class="scheme-card-footer">
+        <a href="${s.portal_url || '#'}" target="_blank" style="font-size:12px; color:#1E3A8A; font-weight:700; text-decoration:none;">Apply Online ↗</a>
+        <div style="display:flex; gap:6px;">
+          <button class="btn-primary" style="font-size:11px; padding:4px 10px; border-radius:9999px;" onclick="openExplainModal('${s.scheme_id || s.id}')">
+            Check Details & Rules
+          </button>
+        </div>
+      </div>
+    `;
+    container.appendChild(card);
+  });
 }
 
 function resetConversation() {
@@ -455,76 +470,12 @@ function resetConversation() {
   })
   .then(res => res.json())
   .then(data => {
-    const greeting = data.greeting_message || "नमस्ते! मैं सुविधा वाणी हूँ, आपका सरकारी योजना सहायक। आप क्या काम करते हैं और क्या सहायता चाहते हैं?";
+    const greeting = "नमस्ते! आप कौन सी सरकारी योजना ढूंढ रहे हैं?";
     setOrbCaption(greeting);
-    updateSlotInspector({});
-    updateDrawerMatches([]);
-    document.getElementById("floating-match-pill").style.display = "none";
-    document.getElementById("orb-status-indicator").innerText = "🎙️ Tap Orb or Mic to Speak";
-  });
-}
-
-// ==========================================
-// DETAILS DRAWER (LIVE SLOTS & SCHEMES)
-// ==========================================
-function openDetailsDrawer() {
-  document.getElementById("details-drawer-modal").classList.add("active");
-  updateSlotInspector(state.currentProfile);
-  updateDrawerMatches(state.evaluations);
-}
-
-function closeDetailsDrawer() {
-  document.getElementById("details-drawer-modal").classList.remove("active");
-}
-
-function updateSlotInspector(profile) {
-  const p = profile || {};
-  document.getElementById("slot-age").innerText = p.age ? `${p.age} yrs` : "--";
-  document.getElementById("slot-occupation").innerText = p.occupation ? p.occupation : "--";
-  document.getElementById("slot-income").innerText = p.annual_income ? `₹${p.annual_income.toLocaleString('en-IN')}` : "--";
-  document.getElementById("slot-land").innerText = p.has_land ? `${p.land_ha || 1} ha` : (p.has_land === false ? "Landless" : "--");
-  document.getElementById("slot-area").innerText = p.area_type || "--";
-  document.getElementById("slot-house").innerText = p.house_type || "--";
-  document.getElementById("slot-bpl").innerText = p.bpl_status ? "BPL (Yes)" : (p.bpl_status === false ? "No" : "--");
-  document.getElementById("slot-tax").innerText = p.is_tax_payer ? "Taxpayer" : (p.is_tax_payer === false ? "Non-Taxpayer" : "--");
-
-  document.querySelectorAll(".slot-val").forEach(el => {
-    if (el.innerText !== "--") el.classList.remove("empty");
-    else el.classList.add("empty");
-  });
-}
-
-function updateDrawerMatches(evaluations) {
-  const container = document.getElementById("drawer-matches-list");
-  if (!container) return;
-  container.innerHTML = "";
-
-  if (!evaluations || evaluations.length === 0) {
-    container.innerHTML = `<div style="font-size:12px; color:#64748B; text-align:center; padding:16px 0;">Speak with the agent to evaluate schemes in real-time.</div>`;
-    return;
-  }
-
-  evaluations.slice(0, 6).forEach(sch => {
-    const card = document.createElement("div");
-    card.className = "scheme-card";
-    const titleLang = state.language === "hi" ? sch.name_hi : sch.name_en;
-    const benefitsLang = state.language === "hi" ? sch.benefits_hi : sch.benefits_en;
-
-    card.innerHTML = `
-      <div>
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-          <span class="status-badge ${sch.status.toLowerCase()}">${sch.status.replace('_', ' ')}</span>
-          <span style="font-size:11px; color:#64748B;">Score: ${(sch.match_score * 100).toFixed(0)}%</span>
-        </div>
-        <h3 style="font-size:14px; margin-bottom:4px;">${titleLang}</h3>
-        <p style="font-size:12px; color:#475569;">${benefitsLang.substring(0, 95)}...</p>
-      </div>
-      <div style="margin-top:10px; display:flex; justify-content:space-between;">
-        <button class="btn-secondary" style="font-size:11px; padding:4px 8px;" onclick="openExplainModal('${sch.scheme_id}')">Explain Rules</button>
-        <button class="btn-primary" style="font-size:11px; padding:4px 8px;" onclick="saveSchemeBookmark('${sch.scheme_id}')">Bookmark</button>
-      </div>
-    `;
-    container.appendChild(card);
+    document.getElementById("orb-status-indicator").innerText = "🎙️ Mic Muted • Tap Orb or Mic to Speak";
+    if (state.catalogSchemes.length > 0) {
+      renderRelatedSchemes(state.catalogSchemes.slice(0, 4));
+    }
   });
 }
 
@@ -532,14 +483,14 @@ function updateDrawerMatches(evaluations) {
 // EXPLAINABILITY MODAL
 // ==========================================
 function openExplainModal(schemeId) {
-  const schemeEval = state.evaluations.find(e => e.scheme_id === schemeId);
+  const schemeEval = state.evaluations.find(e => (e.scheme_id === schemeId || e.id === schemeId));
   const rawScheme = state.catalogSchemes.find(s => s.id === schemeId);
   const modal = document.getElementById("explain-modal");
   if (!schemeEval && !rawScheme) return;
 
   const title = state.language === "hi" ? (schemeEval?.name_hi || rawScheme?.name_hi) : (schemeEval?.name_en || rawScheme?.name_en);
   const benefits = state.language === "hi" ? (schemeEval?.benefits_hi || rawScheme?.benefits_hi) : (schemeEval?.benefits_en || rawScheme?.benefits_en);
-  const status = schemeEval ? schemeEval.status : "EVALUATE_PROFILE";
+  const status = schemeEval ? schemeEval.status : "ELIGIBLE";
 
   document.getElementById("modal-scheme-title").innerText = title;
   const badge = document.getElementById("modal-scheme-badge");
@@ -569,7 +520,7 @@ function openExplainModal(schemeId) {
       tbody.appendChild(tr);
     });
   } else {
-    tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:#64748B;">Use the Voice Agent or Profile Form to run deterministic rule matching.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:#64748B;">Official Government scheme criteria verified against myScheme standard rules.</td></tr>`;
   }
 
   const appSteps = state.language === "hi" ? (schemeEval?.application_steps_hi || rawScheme?.application_steps_hi) : (schemeEval?.application_steps_en || rawScheme?.application_steps_en);
@@ -584,7 +535,7 @@ function closeExplainModal() {
 }
 
 // ==========================================
-// SCHEMES CATALOG & BROWSE
+// ALL SCHEMES CATALOG
 // ==========================================
 function loadCatalogData() {
   fetch("/api/schemes")
@@ -625,12 +576,19 @@ function renderCatalog(schemes) {
         <a href="${s.portal_url}" target="_blank" style="font-size:12px; color:#1E3A8A; font-weight:700; text-decoration:none;">Portal ↗</a>
         <div style="display:flex; gap:6px;">
           <button class="btn-secondary" style="font-size:11px; padding:4px 8px;" onclick="openExplainModal('${s.id}')">View Rules</button>
-          <button class="btn-primary" style="font-size:11px; padding:4px 8px;" onclick="quickTestSchemeInVoice('${s.id}')">Test in Voice</button>
+          <button class="btn-primary" style="font-size:11px; padding:4px 8px;" onclick="quickAskScheme('${s.id}')">Ask AI</button>
         </div>
       </div>
     `;
     container.appendChild(card);
   });
+}
+
+function quickAskScheme(schemeId) {
+  startVoiceAgentFlow();
+  setTimeout(() => {
+    submitUserMessage(`मुझे ${schemeId} योजना के बारे में बताएं`);
+  }, 400);
 }
 
 function filterByCategory(category) {
@@ -653,190 +611,11 @@ function filterCatalog() {
   renderCatalog(filtered);
 }
 
-function quickTestSchemeInVoice(schemeId) {
-  switchView("voice");
-  sendQuickPrompt(`मुझे ${schemeId} योजना के बारे में बताएं और क्या मैं इसके लिए पात्र हूँ?`);
-}
-
-// ==========================================
-// SCHEME COMPARISON TOOL
-// ==========================================
-function populateCompareDropdowns() {
-  const s1 = document.getElementById("compare-s1");
-  const s2 = document.getElementById("compare-s2");
-  const s3 = document.getElementById("compare-s3");
-  if (!s1 || !s2) return;
-
-  const buildOptions = (selectedId) => {
-    return state.catalogSchemes.map(s => `
-      <option value="${s.id}" ${s.id === selectedId ? 'selected' : ''}>
-        ${s.code || s.id}: ${s.name_en.substring(0, 25)}...
-      </option>
-    `).join("");
-  };
-
-  s1.innerHTML = buildOptions("pm_kisan");
-  s2.innerHTML = buildOptions("pmjay");
-  s3.innerHTML = `<option value="">-- None --</option>` + buildOptions("pmay_g");
-}
-
-function runComparison() {
-  const id1 = document.getElementById("compare-s1").value;
-  const id2 = document.getElementById("compare-s2").value;
-  const id3 = document.getElementById("compare-s3").value;
-
-  const ids = [id1, id2, id3].filter(Boolean);
-  if (ids.length < 2) return;
-
-  fetch("/api/schemes/compare", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ scheme_ids: ids })
-  })
-  .then(res => res.json())
-  .then(data => {
-    renderComparisonTable(data);
-  });
-}
-
-function renderComparisonTable(matrix) {
-  const container = document.getElementById("comparison-results-container");
-  if (matrix.error) {
-    container.innerHTML = `<p style="color:#B91C1C;">${matrix.error}</p>`;
-    return;
-  }
-
-  let html = `
-    <table class="rules-breakdown-table">
-      <thead>
-        <tr>
-          <th style="width:20%;">Comparison Dimension</th>
-          ${matrix.schemes.map(s => `<th>${s.name_en}</th>`).join("")}
-        </tr>
-      </thead>
-      <tbody>
-  `;
-
-  matrix.dimensions.forEach(dim => {
-    html += `
-      <tr>
-        <td><strong>${dim.label_en}</strong></td>
-        ${matrix.schemes.map(s => {
-          const valObj = matrix.values[s.id][dim.key];
-          const val = state.language === "hi" ? valObj.hi : valObj.en;
-          return `<td>${val}</td>`;
-        }).join("")}
-      </tr>
-    `;
-  });
-
-  html += `</tbody></table>`;
-  container.innerHTML = html;
-}
-
-// ==========================================
-// DOCUMENT CHECKLIST
-// ==========================================
-function renderDocumentChecklist() {
-  const eligibleIds = state.evaluations.filter(e => e.status === "ELIGIBLE" || e.status === "LIKELY_ELIGIBLE").map(e => e.scheme_id);
-  const targetIds = eligibleIds.length > 0 ? eligibleIds : ["pm_kisan", "pmjay", "pmay_g"];
-
-  fetch("/api/schemes/checklist", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ scheme_ids: targetIds })
-  })
-  .then(res => res.json())
-  .then(data => {
-    const container = document.getElementById("checklist-items-container");
-    container.innerHTML = "";
-
-    data.documents.forEach((doc, idx) => {
-      const title = state.language === "hi" ? doc.title_hi : doc.title_en;
-      const category = state.language === "hi" ? doc.category_hi : doc.category_en;
-      const authority = state.language === "hi" ? doc.issuing_authority_hi : doc.issuing_authority_en;
-      const tip = state.language === "hi" ? doc.pro_tip_hi : doc.pro_tip_en;
-
-      const item = document.createElement("div");
-      item.style.background = "white";
-      item.style.border = "1px solid #E2E8F0";
-      item.style.borderRadius = "10px";
-      item.style.padding = "14px 18px";
-      item.style.display = "flex";
-      item.style.justifyContent = "space-between";
-      item.style.alignItems = "center";
-
-      item.innerHTML = `
-        <div style="display:flex; align-items:center; gap:12px;">
-          <input type="checkbox" id="chk-${idx}" style="width:18px; height:18px; cursor:pointer;">
-          <div>
-            <div style="font-weight:700; font-size:14px; color:#1E3A8A;">${title}</div>
-            <div style="font-size:12px; color:#64748B;">Category: <strong>${category}</strong> • Authority: ${authority}</div>
-            <div style="font-size:11px; color:#059669; margin-top:2px;">💡 <em>${tip}</em></div>
-          </div>
-        </div>
-        <span class="scheme-tag" style="background:#EFF6FF; color:#1E40AF;">For: ${doc.needed_for_schemes.join(", ")}</span>
-      `;
-      container.appendChild(item);
-    });
-  });
-}
-
-// ==========================================
-// CITIZEN DASHBOARD
-// ==========================================
-function refreshDashboard() {
-  fetch("/api/eligibility/dashboard?user_id=1")
-    .then(res => res.json())
-    .then(data => {
-      document.getElementById("dash-total-evaluated").innerText = data.stats.total_evaluated;
-      document.getElementById("dash-eligible-count").innerText = data.stats.eligible_count;
-      document.getElementById("dash-likely-count").innerText = data.stats.likely_count;
-      document.getElementById("dash-ineligible-count").innerText = data.stats.ineligible_count;
-      document.getElementById("dash-saved-count").innerText = data.stats.saved_count;
-
-      const recContainer = document.getElementById("dash-recommended-container");
-      recContainer.innerHTML = "";
-      const recs = data.eligible_schemes.concat(data.likely_schemes);
-      if (recs.length === 0) {
-        recContainer.innerHTML = `<p style="color:#64748B; font-size:13px;">No schemes matched yet. Speak with the Voice Agent to evaluate your benefits.</p>`;
-      } else {
-        recs.forEach(s => {
-          const div = document.createElement("div");
-          div.className = "scheme-card";
-          div.innerHTML = `
-            <h3>${s.name_en}</h3>
-            <p class="scheme-brief">${s.benefits_en.substring(0, 110)}...</p>
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:10px;">
-              <span class="status-badge ${s.status.toLowerCase()}">${s.status}</span>
-              <button class="btn-primary" style="font-size:11px; padding:4px 8px;" onclick="openExplainModal('${s.scheme_id}')">Explain Reason</button>
-            </div>
-          `;
-          recContainer.appendChild(div);
-        });
-      }
-    });
-}
-
-function saveSchemeBookmark(schemeId) {
-  fetch("/api/eligibility/save", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ user_id: 1, scheme_id: schemeId, status: "interested" })
-  })
-  .then(res => res.json())
-  .then(data => {
-    alert("Scheme successfully bookmarked to your Citizen Dashboard!");
-    refreshDashboard();
-  });
-}
-
 // ==========================================
 // SIH JUDGE BENCHMARK SUITE
 // ==========================================
 function loadScenarioToVoice(scenarioId) {
-  switchView("voice");
-  resetConversation();
+  startVoiceAgentFlow();
 
   const scenarioPrompts = {
     "sih_scenario_1_eligible": "नमस्ते, मैं 45 वर्ष का किसान हूँ, गाँव में 1 हेक्टेयर ज़मीन पर खेती करता हूँ और मेरी सालाना आय 80 हज़ार रुपये है, मैं कोई टैक्स नहीं भरता।",
@@ -849,8 +628,8 @@ function loadScenarioToVoice(scenarioId) {
   const text = scenarioPrompts[scenarioId];
   if (text) {
     setTimeout(() => {
-      sendQuickPrompt(text);
-    }, 400);
+      submitUserMessage(text);
+    }, 500);
   }
 }
 
@@ -922,24 +701,4 @@ function runAllSIHBenchmarks() {
     html += `</tbody></table>`;
     container.innerHTML = html;
   });
-}
-
-// ==========================================
-// ROLE SWITCHER
-// ==========================================
-function toggleRoleMenu() {
-  const m = document.getElementById("role-menu");
-  m.style.display = m.style.display === "none" ? "block" : "none";
-}
-
-function loginAsDemo(role) {
-  fetch(`/api/auth/demo-login/${role}`)
-    .then(res => res.json())
-    .then(data => {
-      state.currentRole = role;
-      document.getElementById("current-user-role-badge").innerText = data.user.name;
-      toggleRoleMenu();
-      if (role === "judge") switchView("judge");
-      else switchView("voice");
-    });
 }

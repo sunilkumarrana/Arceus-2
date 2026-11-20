@@ -301,15 +301,14 @@ body {
 /* CHATGPT-STYLE VOICE ORB INTERFACE (MATCHING USER SCREENSHOT)*/
 /* ========================================================== */
 .voice-fullscreen-wrapper {
-  max-width: 480px;
+  max-width: 820px;
   margin: 0 auto;
   min-height: 82vh;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
   align-items: center;
   position: relative;
-  padding: 10px 0 20px 0;
+  padding: 10px 0 30px 0;
 }
 
 /* TOP MINIMAL CONTROLS */

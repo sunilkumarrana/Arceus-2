@@ -1,6 +1,6 @@
 """
 Conversation Orchestrator and Dialogue State Machine.
-Coordinates NLU, Contradiction Detection, Vague Disambiguation, Rules Reasoning, and Voice Response generation.
+Coordinates NLU, Intent Matching, Contradiction Detection, Vague Disambiguation, Rules Reasoning, and Voice Response generation.
 """
 import re
 from typing import Dict, Any, Optional, List
@@ -29,6 +29,22 @@ class SchemeVoiceAgent:
         self.state: str = "GREETING"
         self.active_contradiction: Optional[ContradictionAlert] = None
 
+        # Scheme intent keywords
+        self.scheme_intent_map = {
+            "pm_kisan": ["pm kisan", "pmkisan", "kisan samman", "kheti", "farmer", "agriculture", "किसान", "खेती", "कृषि"],
+            "pmjay": ["ayushman", "pmjay", "pm-jay", "health", "hospital", "medical", "swasthya", "ilaj", "आयुष्मान", "इलाज", "स्वास्थ्य", "अस्पताल"],
+            "pmay_g": ["pmay", "awas", "housing", "makan", "ghar", "pucca house", "आवास", "मकान", "घर"],
+            "pm_svanidhi": ["svanidhi", "street vendor", "thela", "hawker", "rehri", "vendor loan", "रेहड़ी", "ठेले", "स्वनिधि", "पटरी", "दुकान"],
+            "pmuy_ujjwala": ["ujjwala", "gas cylinder", "lpg", "chulha", "उज्ज्वला", "गैस", "सिलेंडर", "चूल्हा"],
+            "apy": ["atal pension", "apy", "pension", "पेंशन", "60 साल"],
+            "ssy": ["sukanya", "samriddhi", "girl child", "beti", "daughter", "सुकन्या", "बेटी", "बालिका"],
+            "ignops": ["old age", "vriddha", "senior citizen", "बुजुर्ग", "वृद्धावस्था"],
+            "pm_vishwakarma": ["vishwakarma", "artisan", "carpenter", "blacksmith", "badhai", "karigar", "toolkit", "विश्वकर्मा", "कारीगर", "बढ़ई"],
+            "mgnrega": ["mgnrega", "nrega", "100 days", "unskilled labour", "rozgar", "मनरेगा", "नरेगा", "रोजगार"],
+            "pmmvy": ["matru vandana", "pmmvy", "pregnant", "garbhvati", "maternity", "मातृ वंदना", "गर्भवती"],
+            "pm_surya_ghar": ["surya", "solar", "rooftop", "muft bijli", "electricity", "सोलर", "सूर्य घर", "बिजली", "रूफटॉप"]
+        }
+
     def reset(self, initial_language: str = "hi"):
         """Resets agent conversation for a new caller."""
         self.profile = CallerProfile()
@@ -41,19 +57,25 @@ class SchemeVoiceAgent:
 
     def detect_language(self, text: str) -> str:
         """Detects whether user is speaking in Hindi (Devanagari/transliterated) or English."""
-        # Devanagari Unicode range
         if re.search(r'[\u0900-\u097F]', text):
             return "hi"
-        # Common Hinglish markers
         hinglish_words = ["namaste", "pranam", "kisan", "kheti", "haan", "nahi", "saal", "meri", "mera", "hume", "chahiye", "bhaiya", "suno", "madad"]
         t_low = text.lower()
         if any(w in t_low for w in hinglish_words):
             return "hi"
-        # Common English markers
         english_words = ["hello", "hi", "i am", "my name is", "farmer", "scheme", "benefit", "years old", "income", "eligible"]
         if any(w in t_low for w in english_words):
             return "en"
         return self.language
+
+    def match_scheme_intent(self, text: str) -> List[str]:
+        """Matches user text against known welfare scheme keywords."""
+        t_low = text.lower()
+        matched = []
+        for scheme_id, keywords in self.scheme_intent_map.items():
+            if any(k in t_low for k in keywords):
+                matched.append(scheme_id)
+        return matched
 
     def process_utterance(self, user_text: str, forced_lang: Optional[str] = None) -> AgentTurnResponse:
         """Processes a caller turn, updates knowledge, checks rules, and returns voice response."""
@@ -78,7 +100,6 @@ class SchemeVoiceAgent:
             msg_hi = contradiction.message_hi
             spoken = msg_hi if lang == "hi" else msg_en
 
-            # Evaluate schemes with current profile
             evals = self.rules_engine.evaluate_all(self.profile)
             eligible_count = len([s for s in evals if s.status == "ELIGIBLE"])
             likely_count = len([s for s in evals if s.status == "LIKELY_ELIGIBLE"])
@@ -101,7 +122,7 @@ class SchemeVoiceAgent:
             self.history.append({"role": "agent", "text": spoken})
             return resp
 
-        # If we were reconciling and received a clear resolution
+        # Clear contradiction if resolved
         if self.active_contradiction and extracted_slots:
             self.active_contradiction = None
 
@@ -148,60 +169,100 @@ class SchemeVoiceAgent:
             setattr(self.profile, k, v)
             self.profile.extracted_slots_history[k] = v
 
-        # Step 5: Rules Evaluation
+        # Step 5: Direct Scheme Intent Matching
+        matched_intent_ids = self.match_scheme_intent(user_text)
+
+        # Step 6: Rules Evaluation
         evals = self.rules_engine.evaluate_all(self.profile)
+
+        # If user explicitly asked for specific scheme(s), boost them to the very top!
+        if matched_intent_ids:
+            def sort_key(s):
+                if s.scheme_id in matched_intent_ids:
+                    return (0, -s.match_score)
+                status_priority = {"ELIGIBLE": 1, "LIKELY_ELIGIBLE": 2, "UNKNOWN": 3, "NOT_ELIGIBLE": 4}
+                return (status_priority.get(s.status, 5), -s.match_score)
+            evals.sort(key=sort_key)
+
         eligible_schemes = [s for s in evals if s.status == "ELIGIBLE"]
         likely_schemes = [s for s in evals if s.status == "LIKELY_ELIGIBLE"]
 
-        # Step 6: Determine Next Action (Decision vs Next Question)
+        # Step 7: Formulate Response
+        # If user asked about a specific scheme (e.g. "PM Kisan" or "Ayushman Bharat")
+        if matched_intent_ids:
+            target_scheme = next((s for s in evals if s.scheme_id == matched_intent_ids[0]), None)
+            if target_scheme:
+                scheme_title_en = target_scheme.name_en
+                scheme_title_hi = target_scheme.name_hi
+                benefits_en = target_scheme.benefits_en
+                benefits_hi = target_scheme.benefits_hi
+
+                if target_scheme.status == "ELIGIBLE":
+                    msg_en = f"Great news! You qualify for {scheme_title_en}. It provides {benefits_en}. I have shown the full details on your screen."
+                    msg_hi = f"बढ़िया! आप {scheme_title_hi} के लिए पूरी तरह पात्र हैं। इसके तहत आपको {benefits_hi} मिलता है। मैंने स्क्रीन पर योजना का पूरा विवरण दिखा दिया है।"
+                else:
+                    msg_en = f"Here are the details for {scheme_title_en}: it provides {benefits_en}. To check your exact eligibility, could you tell me your age or approximate income?"
+                    msg_hi = f"{scheme_title_hi} के तहत आपको {benefits_hi} मिलता है। आपकी पात्रता जांचने के लिए, क्या आप अपनी उम्र या सालाना कमाई बता सकते हैं?"
+
+                spoken = msg_hi if lang == "hi" else msg_en
+                resp = AgentTurnResponse(
+                    agent_message_en=msg_en,
+                    agent_message_hi=msg_hi,
+                    current_language=lang,
+                    spoken_text=spoken,
+                    state="RECOMMENDING",
+                    questions_asked_count=self.questions_asked_count,
+                    slots_extracted_this_turn=extracted_slots,
+                    caller_profile=self.profile,
+                    schemes_evaluation=evals,
+                    eligible_schemes_count=len(eligible_schemes),
+                    likely_schemes_count=len(likely_schemes),
+                    decision_reached=True
+                )
+                self.history.append({"role": "agent", "text": spoken})
+                return resp
+
+        # Step 8: Information Gain Question or Decision Reached
         slot_to_ask, next_q_en, next_q_hi = self.questioner.select_next_question(
             self.profile,
             evals,
             self.questions_asked_count
         )
 
-        if slot_to_ask is None or (len(eligible_schemes) >= 1 and self.questions_asked_count >= 3):
-            # DECISION REACHED: Present recommendations & explain reasoning
+        if slot_to_ask is None or (len(eligible_schemes) >= 1 and self.questions_asked_count >= 2):
             self.state = "RECOMMENDING"
             decision_reached = True
 
             if eligible_schemes:
-                names_en = ", ".join([s.name_en for s in eligible_schemes[:3]])
-                names_hi = ", ".join([s.name_hi for s in eligible_schemes[:3]])
+                names_en = ", ".join([s.name_en.split('(')[0].strip() for s in eligible_schemes[:3]])
+                names_hi = ", ".join([s.name_hi.split('(')[0].strip() for s in eligible_schemes[:3]])
                 top_scheme = eligible_schemes[0]
 
                 msg_en = (
-                    f"Congratulations! Based on the details provided, you are eligible for {len(eligible_schemes)} welfare scheme(s): "
-                    f"{names_en}. For example, under {top_scheme.name_en}, you qualify for {top_scheme.benefits_en}. "
-                    "All required criteria have been verified. Would you like me to explain the application process or documents needed?"
+                    f"Based on what you told me, you are eligible for {names_en}. "
+                    f"For instance, under {top_scheme.name_en.split('(')[0].strip()}, you qualify for {top_scheme.benefits_en}. "
+                    "I have displayed the related scheme cards below on your screen."
                 )
                 msg_hi = (
-                    f"बधाई हो! आपकी दी गई जानकारी के अनुसार आप {len(eligible_schemes)} सरकारी योजनाओं के लिए पूरी तरह पात्र हैं: "
-                    f"{names_hi}। उदाहरण के लिए, {top_scheme.name_hi} के तहत आपको {top_scheme.benefits_hi} का लाभ मिलेगा। "
-                    "सभी पात्रता नियम सत्यापित हो चुके हैं। क्या आप आवेदन करने के चरण या आवश्यक दस्तावेजों की जानकारी चाहते हैं?"
+                    f"आपकी जानकारी के अनुसार आप {names_hi} के लिए पात्र हैं। "
+                    f"जैसे {top_scheme.name_hi.split('(')[0].strip()} के तहत आपको {top_scheme.benefits_hi} का लाभ मिलेगा। "
+                    "मैंने संबंधित योजनाओं का विवरण आपकी स्क्रीन पर दिखा दिया है।"
                 )
             elif likely_schemes:
                 top_likely = likely_schemes[0]
                 msg_en = (
-                    f"You are very likely eligible for {top_likely.name_en} ({top_likely.benefits_en}). "
-                    f"To finalize your application, please have your {', '.join(top_likely.required_documents_en[:2])} ready."
+                    f"You are very likely eligible for {top_likely.name_en.split('(')[0].strip()} ({top_likely.benefits_en}). "
+                    f"Please check the details shown below."
                 )
                 msg_hi = (
-                    f"आप {top_likely.name_hi} ({top_likely.benefits_hi}) के लिए अत्यधिक संभावित पात्र हैं। "
-                    f"आवेदन पूरा करने के लिए अपने {', '.join(top_likely.required_documents_hi[:2])} तैयार रखें।"
+                    f"आप {top_likely.name_hi.split('(')[0].strip()} के लिए संभावित पात्र हैं। "
+                    f"कृपया नीचे दिए गए योजना विवरण को देखें।"
                 )
             else:
-                msg_en = (
-                    "Based on your profile, we could not find an immediate direct central welfare scheme match. "
-                    "However, you may explore state-specific livelihood or skill development programs on myScheme.gov.in."
-                )
-                msg_hi = (
-                    "आपकी दी गई जानकारी के अनुसार वर्तमान में कोई सीधी केंद्रीय कल्याण योजना मेल नहीं खाती। "
-                    "लेकिन आप myScheme.gov.in पर राज्य स्तरीय आजीविका या कौशल विकास योजनाएं देख सकते हैं।"
-                )
+                msg_en = "I have displayed the available welfare schemes below. You can ask me about farming, healthcare, pension, or housing."
+                msg_hi = "मैंने संबंधित सरकारी योजनाएं नीचे दिखा दी हैं। आप मुझसे खेती, स्वास्थ्य, पेंशन या आवास के बारे में पूछ सकते हैं।"
 
             spoken = msg_hi if lang == "hi" else msg_en
-
             resp = AgentTurnResponse(
                 agent_message_en=msg_en,
                 agent_message_hi=msg_hi,
@@ -219,7 +280,7 @@ class SchemeVoiceAgent:
             self.history.append({"role": "agent", "text": spoken})
             return resp
 
-        # Step 7: Ask Next Optimal Question
+        # Ask next optimal question
         self.state = "INQUIRING"
         self.last_asked_slot = slot_to_ask
         self.questions_asked_count += 1

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>सुविधा वाणी (SuvidhaVani) - AI Voice-First Scheme Agent</title>
+  <title>सुविधा वाणी (SuvidhaVani) - Government Schemes Voice Agent</title>
   <link rel="stylesheet" href="/css/app.css">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220%22%20%22100%22%20%22100%22><text y=%22.9em%22 font-size=%2290%22>🎙️</text></svg>">
 </head>
@@ -12,59 +12,43 @@
   <!-- TOP GOV TRICOLOR BAR -->
   <div class="gov-top-bar"></div>
 
-  <!-- APP HEADER -->
+  <!-- MINIMAL APP HEADER -->
   <header class="app-header">
-    <div class="brand-wrapper" onclick="switchView('landing')">
+    <div class="brand-wrapper" onclick="goToHome()">
       <div class="emblem-icon">🏛️</div>
       <div class="brand-titles">
         <h1>सुविधा वाणी (SuvidhaVani)</h1>
-        <p>National AI Voice-First Scheme Assistant • 14555</p>
+        <p>National AI Scheme Helpline • 14555</p>
       </div>
     </div>
 
-    <!-- NAVIGATION TABS -->
+    <!-- SIMPLE NAVIGATION -->
     <ul class="nav-links">
-      <li class="nav-item active" data-view="landing" onclick="switchView('landing')">
+      <li class="nav-item active" data-view="landing" onclick="goToHome()">
         <span>🏠</span> Home
       </li>
-      <li class="nav-item" data-view="voice" onclick="switchView('voice')">
-        <span>🎙️</span> Voice AI Agent
-      </li>
-      <li class="nav-item" data-view="dashboard" onclick="switchView('dashboard')">
-        <span>📊</span> Dashboard
+      <li class="nav-item" data-view="voice" onclick="startVoiceAgentFlow()">
+        <span>🎙️</span> Voice Agent
       </li>
       <li class="nav-item" data-view="catalog" onclick="switchView('catalog')">
-        <span>🏛️</span> Catalog
-      </li>
-      <li class="nav-item" data-view="compare" onclick="switchView('compare')">
-        <span>⚖️</span> Compare
-      </li>
-      <li class="nav-item" data-view="checklist" onclick="switchView('checklist')">
-        <span>📋</span> Checklist
+        <span>🏛️</span> All Schemes
       </li>
       <li class="nav-item judge-badge" data-view="judge" onclick="switchView('judge')">
-        <span>🏆</span> SIH Judge Suite
+        <span>🏆</span> SIH Judge Mode
       </li>
     </ul>
 
     <!-- HEADER CONTROLS -->
     <div class="header-actions">
       <select id="app-lang-select" class="lang-selector" onchange="changeLanguage(this.value)">
-        <option value="hi" selected>🇮🇳 हिन्दी</option>
+        <option value="hi" selected>🇮🇳 हिन्दी (Hindi)</option>
         <option value="en">🌐 English</option>
-        <option value="te">🗣️ తెలుగు</option>
+        <option value="te">🗣️ తెలుగు (Telugu)</option>
       </select>
 
-      <div class="dropdown" style="position:relative;">
-        <button class="btn-secondary" style="font-size:12px; padding:6px 12px; border-radius:9999px;" onclick="toggleRoleMenu()">
-          👤 <span id="current-user-role-badge">Demo Citizen</span> ▼
-        </button>
-        <div id="role-menu" style="display:none; position:absolute; right:0; top:36px; background:white; border:1px solid #CBD5E1; border-radius:8px; box-shadow:0 4px 12px rgba(0,0,0,0.1); width:170px; z-index:200;">
-          <div style="padding:10px 14px; font-size:12px; cursor:pointer; border-bottom:1px solid #F1F5F9;" onclick="loginAsDemo('citizen')">👨‍🌾 Demo Citizen</div>
-          <div style="padding:10px 14px; font-size:12px; cursor:pointer; border-bottom:1px solid #F1F5F9; color:#B45309; font-weight:600;" onclick="loginAsDemo('judge')">🏆 SIH Judge Mode</div>
-          <div style="padding:10px 14px; font-size:12px; cursor:pointer;" onclick="loginAsDemo('admin')">⚙️ Ministry Admin</div>
-        </div>
-      </div>
+      <button id="voice-toggle-btn" class="voice-mute-btn active" onclick="toggleAudioOutput()">
+        <span id="voice-icon">🔊</span> Voice ON
+      </button>
     </div>
   </header>
 
@@ -72,246 +56,144 @@
   <main class="app-container">
 
     <!-- ========================================================== -->
-    <!-- STARTING PAGE / ONBOARDING (CLEAN START WITH FEW DETAILS)  -->
+    <!-- 1. STARTING PAGE: SIMPLE DETAILS & "SHOW SCHEMES" BUTTON    -->
     <!-- ========================================================== -->
     <section id="view-landing" class="app-view active-view">
       <div class="landing-hero-card">
-        <div class="landing-pill-badge">🇮🇳 Digital India • myScheme Verified Engine</div>
+        <div class="landing-pill-badge">🇮🇳 Government of India • myScheme Public Assistant</div>
         <h2 class="landing-title">Find Government Welfare Schemes<br>Just by Speaking</h2>
         <p class="landing-subtitle">
-          No complicated bureaucratic paperwork. Tell us a few basics or jump right in to speak naturally in Hindi, English, or your regional language.
+          Discover central and state government schemes, check your eligibility, and get direct application guidance in your own language.
         </p>
 
-        <!-- FEW DETAILS INPUT CARD -->
-        <div class="quick-details-box">
-          <div class="quick-details-header">
-            <span>📝</span> Quick Starting Details (Optional)
+        <!-- WEBSITE HIGHLIGHTS / FEW DETAILS -->
+        <div class="quick-details-box" style="margin-bottom:24px;">
+          <div class="quick-details-header" style="font-size:14px;">
+            <span>ℹ️</span> <strong>About SuvidhaVani (सुविधा वाणी के बारे में)</strong>
           </div>
-          <div class="quick-inputs-grid">
-            <div class="input-group">
-              <label>Your Name (आपका नाम)</label>
-              <input type="text" id="landing-name" class="quick-input-text" placeholder="e.g. Ramesh Kumar">
+          <div style="display:flex; flex-direction:column; gap:10px; font-size:13px; color:#334155;">
+            <div style="display:flex; align-items:flex-start; gap:8px;">
+              <span>🗣️</span>
+              <span><strong>Voice-First Assistance:</strong> No need to fill long confusing forms. Just speak or type naturally in Hindi or English.</span>
             </div>
-            <div class="input-group">
-              <label>Occupation / Category</label>
-              <select id="landing-occupation" class="quick-input-select">
-                <option value="">-- Select (or tell AI later) --</option>
-                <option value="farmer">Farmer / Agricultural (किसान)</option>
-                <option value="street_vendor">Street Vendor / Hawker (ठेले वाले)</option>
-                <option value="artisan">Artisan / Craftsman (कारीगर/बढ़ई)</option>
-                <option value="unskilled_labour">Daily Wage Labourer (दैनिक मजदूर)</option>
-                <option value="woman">Woman / Homemaker (महिला/माता)</option>
-                <option value="student">Student / Youth (विद्यार्थी)</option>
-                <option value="senior">Senior Citizen (वरिष्ठ नागरिक)</option>
-              </select>
+            <div style="display:flex; align-items:flex-start; gap:8px;">
+              <span>🌾</span>
+              <span><strong>All Major Welfare Categories:</strong> Farming subsidies, Ayushman Bharat healthcare, housing grants, elderly pensions, street vendor loans, and women empowerment.</span>
             </div>
-            <div class="input-group">
-              <label>State of Residence</label>
-              <select id="landing-state" class="quick-input-select">
-                <option value="All-India">All-India (National)</option>
-                <option value="Uttar Pradesh">Uttar Pradesh</option>
-                <option value="Bihar">Bihar</option>
-                <option value="Rajasthan">Rajasthan</option>
-                <option value="Madhya Pradesh">Madhya Pradesh</option>
-                <option value="Maharashtra">Maharashtra</option>
-                <option value="Telangana">Telangana</option>
-              </select>
-            </div>
-            <div class="input-group">
-              <label>Preferred Voice Language</label>
-              <select id="landing-lang" class="quick-input-select" onchange="changeLanguage(this.value)">
-                <option value="hi" selected>हिन्दी (Hindi)</option>
-                <option value="en">English</option>
-                <option value="te">తెలుగు (Telugu)</option>
-              </select>
+            <div style="display:flex; align-items:flex-start; gap:8px;">
+              <span>✅</span>
+              <span><strong>Verified Government Rules:</strong> 100% transparent and deterministic rules from official Government of India portals.</span>
             </div>
           </div>
         </div>
 
-        <!-- CONTINUE WITH AI AGENT BUTTON -->
+        <!-- BIG "SHOW SCHEMES" BUTTON -->
         <div>
-          <button class="btn-start-agent" onclick="continueWithAIAgent()">
-            <span>🎙️</span> Continue with AI Agent
+          <button class="btn-start-agent" style="font-size:18px; padding:18px 42px;" onclick="startVoiceAgentFlow()">
+            <span>🎙️</span> <strong>Show Schemes (योजनाएं देखें)</strong>
           </button>
         </div>
 
-        <div style="margin-top:20px; font-size:12px; color:#94A3B8;">
-          Free Public Service Helpline • Toll-Free 14555 • Powered by Deterministic Reasoning
+        <div style="margin-top:18px; font-size:12px; color:#64748B;">
+          Click "Show Schemes" to talk directly with the AI Voice Agent • Toll-Free 14555
         </div>
       </div>
     </section>
 
     <!-- ========================================================== -->
-    <!-- VIEW 2: CHATGPT-STYLE AI VOICE ORB (MATCHING USER IMAGE)   -->
+    <!-- 2. VOICE AGENT: ASKS "WHICH SCHEME ARE YOU LOOKING FOR?"   -->
+    <!--    AND SHOWS RELATED SCHEMES BELOW IT                      -->
     <!-- ========================================================== -->
     <section id="view-voice" class="app-view">
-      <div class="voice-fullscreen-wrapper">
+      <div class="voice-fullscreen-wrapper" style="max-width:820px;">
         
-        <!-- TOP MINIMAL CONTROLS (MATCHING SCREENSHOT) -->
+        <!-- TOP MINIMAL BAR -->
         <div class="voice-top-controls">
-          <button class="round-icon-btn" title="View Options / Dashboard" onclick="switchView('dashboard')">
-            ☰
+          <button class="round-icon-btn" title="Back to Home" onclick="goToHome()">
+            ←
           </button>
           
           <div class="voice-call-meta">
-            <div class="voice-call-title">सुविधा सखी (Suvidha AI)</div>
+            <div class="voice-call-title">सुविधा सखी (Suvidha AI Voice Agent)</div>
             <div class="voice-call-status">
               <span style="display:inline-block; width:6px; height:6px; background:#10B981; border-radius:50%;"></span>
-              <span>Helpline 14555 • Connected</span>
+              <span id="call-status-badge">Helpline 14555 • Connected</span>
             </div>
           </div>
 
-          <button class="round-icon-btn" title="Settings / Judge Suite" onclick="switchView('judge')">
-            ⚙️
+          <button class="round-icon-btn" title="Switch Language" onclick="toggleLanguageFast()">
+            🌐
           </button>
         </div>
 
-        <!-- CENTER STAGE: THE GLOWING FLUID CLOUD ORB (LIKE SCREENSHOT) -->
-        <div class="voice-orb-stage">
-          <!-- The Glowing Orb -->
-          <div id="main-voice-orb" class="voice-orb" onclick="toggleVoiceInput()" title="Tap to Speak with Suvidha AI"></div>
+        <!-- CENTER STAGE: ANIMATED VOICE ORB (CHATGPT STYLE) -->
+        <div class="voice-orb-stage" style="padding:15px 0 10px 0;">
+          <div id="main-voice-orb" class="voice-orb" onclick="toggleVoiceInput()" title="Tap to Speak"></div>
 
-          <!-- Spoken Captions & Live Response -->
-          <div class="voice-caption-box">
-            <div id="voice-caption-text" class="voice-agent-text">
-              "नमस्ते! मैं सुविधा वाणी हूँ। आप अपने बारे में बताएं, मैं आपकी सरकारी योजनाओं की जाँच करूँगी।"
+          <!-- AGENT QUESTION / LIVE SPOKEN CAPTION -->
+          <div class="voice-caption-box" style="margin-top:20px; min-height:55px;">
+            <div id="voice-caption-text" class="voice-agent-text" style="font-size:18px; color:#1E3A8A;">
+              "आप कौन सी सरकारी योजना ढूंढ रहे हैं? (Which scheme are you looking for?)"
             </div>
             <div>
-              <span id="voice-sub-status" class="voice-status-pill">
-                <span id="orb-status-indicator">🎙️ Tap Orb or Mic to Speak</span>
+              <span class="voice-status-pill">
+                <span id="orb-status-indicator">🔴 Listening... बोलिए...</span>
               </span>
             </div>
-            
-            <!-- Real-time Matched Schemes Pill (Floats when schemes qualify) -->
-            <div id="floating-match-pill" style="display:none;" class="floating-match-indicator" onclick="openDetailsDrawer()">
-              <span id="floating-match-count">🎉 2 Schemes Eligible</span> • <u>Tap to View Details</u>
+          </div>
+
+          <!-- QUICK SCHEME CATEGORY SUGGESTION CHIPS -->
+          <div style="margin-top:14px; text-align:center;">
+            <div style="font-size:11px; font-weight:700; color:#64748B; margin-bottom:6px; text-transform:uppercase;">Popular Scheme Topics (क्लिक करें या बोलें):</div>
+            <div style="display:flex; flex-wrap:wrap; justify-content:center; gap:6px;">
+              <button class="quick-pill" onclick="handleSchemeQuickChoice('PM Kisan / Farming (खेती-बाड़ी)')">🌾 Farming / किसान (PM-KISAN)</button>
+              <button class="quick-pill" onclick="handleSchemeQuickChoice('Ayushman Bharat / Medical Treatment (स्वास्थ्य/इलाज)')">🏥 Healthcare (Ayushman Bharat)</button>
+              <button class="quick-pill" onclick="handleSchemeQuickChoice('PM Awas Yojana (मकान/आवास)')">🏠 Housing (PM Awas)</button>
+              <button class="quick-pill" onclick="handleSchemeQuickChoice('Old Age / Pension (वृद्धावस्था पेंशन)')">👵 Pension (पेंशन)</button>
+              <button class="quick-pill" onclick="handleSchemeQuickChoice('PM SVANidhi / Street Vendor Loan (रेहड़ी-पटरी)')">🛒 Street Vendor Loan</button>
+              <button class="quick-pill" onclick="handleSchemeQuickChoice('Sukanya Samriddhi / Girl Child (सुकन्या)')">👧 Girl Child (Sukanya)</button>
+              <button class="quick-pill" onclick="handleSchemeQuickChoice('Free Solar Electricity / Surya Ghar (सूर्य घर)')">⚡ Solar Rooftop (सूर्य घर)</button>
             </div>
           </div>
-
-          <!-- Collapsible Drawer Toggle -->
-          <button class="details-sheet-toggle" onclick="openDetailsDrawer()">
-            <span>📋</span> View My Extracted Profile & Scheme Matches (Live)
-          </button>
         </div>
 
-        <!-- BOTTOM MINIMAL CONTROL BAR (MATCHING SCREENSHOT) -->
-        <div class="voice-bottom-bar">
+        <!-- BOTTOM VOICE & INPUT BAR -->
+        <div class="voice-bottom-bar" style="margin-bottom:18px;">
           <div class="pill-text-input-box">
-            <button class="pill-plus-btn" title="Quick Prompts" onclick="toggleQuickPromptsDrawer()">+</button>
-            <input type="text" id="chat-text-input" class="pill-text-input" placeholder="Ask Suvidha / बोलिए..." onkeypress="handleInputKey(event)">
+            <input type="text" id="chat-text-input" class="pill-text-input" placeholder="Tell me what scheme you want (बोलें या लिखें)..." onkeypress="handleInputKey(event)">
           </div>
 
-          <button id="mic-btn" class="voice-round-action-btn mic" title="Click to speak" onclick="toggleVoiceInput()">
-            🎤
+          <button id="mic-btn" class="voice-round-action-btn mic listening" title="Microphone" onclick="toggleVoiceInput()">
+            🔴
           </button>
 
-          <button class="voice-round-action-btn close" title="End / Reset Conversation" onclick="resetConversation()">
+          <button class="voice-round-action-btn close" title="Reset Voice" onclick="resetConversation()">
             ✕
           </button>
         </div>
 
-        <!-- QUICK PROMPTS FLOATING DRAWER (OPENS ON '+') -->
-        <div id="quick-prompts-drawer" style="display:none; width:100%; background:white; border:1px solid #E2E8F0; border-radius:14px; padding:12px; margin-top:8px; box-shadow:0 4px 12px rgba(0,0,0,0.08);">
-          <div style="font-size:11px; font-weight:700; color:#64748B; margin-bottom:6px;">Quick Persona Tests:</div>
-          <div style="display:flex; flex-wrap:wrap; gap:6px;">
-            <button class="quick-pill" onclick="sendQuickPrompt('नमस्ते, मैं 45 साल का किसान हूँ, 1 हेक्टेयर ज़मीन है और 80 हज़ार सालाना कमाई है।')">👨‍🌾 45yo Farmer</button>
-            <button class="quick-pill" onclick="sendQuickPrompt('नमस्ते, मैं शहर में फल का ठेला लगाता हूँ और मुझे लोन चाहिए।')">🛒 Street Vendor</button>
-            <button class="quick-pill" onclick="sendQuickPrompt('मेरी 5 साल की बेटी है, मुझे उसके लिए बचत योजना चाहिए।')">👧 Girl Child</button>
-            <button class="quick-pill" onclick="sendQuickPrompt('मेरी उम्र 24 साल है और मुझे वृद्धावस्था पेंशन चाहिए।')">⚠️ Contradiction</button>
-            <button class="quick-pill" onclick="sendQuickPrompt('कमाई का ठीक से नहीं पता, बस थोड़ा बहुत कमा लेते हैं।')">💡 Vague Income</button>
+        <!-- ========================================================== -->
+        <!-- 3. RELATED SCHEMES DISPLAY CONTAINER (SHOWN DYNAMICALLY)   -->
+        <!-- ========================================================== -->
+        <div id="related-schemes-section" style="width:100%; border-top:2px solid #E2E8F0; padding-top:20px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+            <h3 id="related-schemes-title" style="font-size:17px; font-weight:700; color:#1E3A8A;">
+              📋 Related Schemes (संबंधित योजनाएं)
+            </h3>
+            <span id="related-count-badge" class="status-badge eligible">Ready</span>
+          </div>
+
+          <!-- CARDS CONTAINER -->
+          <div id="related-schemes-cards" class="schemes-catalog-grid">
+            <!-- Dynamically populated when user asks or speaks! -->
           </div>
         </div>
 
       </div>
     </section>
 
-    <!-- ========================================================== -->
-    <!-- SLIDE-UP LIVE CO-PILOT DRAWER (PROFILE & SCHEME MATCHES)   -->
-    <!-- ========================================================== -->
-    <div id="details-drawer-modal" class="modal-overlay">
-      <div class="modal-content" style="max-width:820px;">
-        <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center;">
-          <div>
-            <h3 style="font-size:18px; font-weight:700; color:#1E3A8A;">👤 Live Citizen Profile & Schemes</h3>
-            <span style="font-size:12px; color:#64748B;">Continuously synchronized with the voice agent</span>
-          </div>
-          <button onclick="closeDetailsDrawer()" style="border:none; background:transparent; font-size:24px; cursor:pointer;">&times;</button>
-        </div>
-
-        <div style="padding:16px 0;">
-          <!-- SLOTS GRID -->
-          <h4 style="font-size:13px; font-weight:700; color:#334155; margin-bottom:8px;">Extracted Demographic Slots:</h4>
-          <div class="slots-grid" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(130px, 1fr)); gap:8px; margin-bottom:20px;">
-            <div class="slot-item"><div class="slot-label">Age</div><div id="slot-age" class="slot-val empty">--</div></div>
-            <div class="slot-item"><div class="slot-label">Occupation</div><div id="slot-occupation" class="slot-val empty">--</div></div>
-            <div class="slot-item"><div class="slot-label">Annual Income</div><div id="slot-income" class="slot-val empty">--</div></div>
-            <div class="slot-item"><div class="slot-label">Landholding</div><div id="slot-land" class="slot-val empty">--</div></div>
-            <div class="slot-item"><div class="slot-label">Area</div><div id="slot-area" class="slot-val empty">--</div></div>
-            <div class="slot-item"><div class="slot-label">House</div><div id="slot-house" class="slot-val empty">--</div></div>
-            <div class="slot-item"><div class="slot-label">BPL Card</div><div id="slot-bpl" class="slot-val empty">--</div></div>
-            <div class="slot-item"><div class="slot-label">Tax Status</div><div id="slot-tax" class="slot-val empty">--</div></div>
-          </div>
-
-          <!-- SCHEMES LIST -->
-          <h4 style="font-size:13px; font-weight:700; color:#334155; margin-bottom:8px;">Eligible Schemes Evaluated:</h4>
-          <div id="drawer-matches-list" class="schemes-catalog-grid">
-            <!-- Populated via JS -->
-          </div>
-        </div>
-
-        <div style="text-align:right; border-top:1px solid #E2E8F0; padding-top:12px;">
-          <button class="btn-primary" onclick="closeDetailsDrawer()">Back to Voice Agent</button>
-        </div>
-      </div>
-    </div>
-
     <!-- ========================================== -->
-    <!-- VIEW 3: CITIZEN DASHBOARD                  -->
-    <!-- ========================================== -->
-    <section id="view-dashboard" class="app-view">
-      <div style="margin-bottom:20px;">
-        <h2 style="font-size:22px; color:#1E3A8A; font-weight:700;">Citizen Welfare Dashboard</h2>
-        <p style="font-size:13px; color:#475569;">Track evaluated welfare benefits, confirmed entitlements, application documents, and saved schemes.</p>
-      </div>
-
-      <div class="dashboard-metrics-grid">
-        <div class="metric-card">
-          <div class="metric-title">Total Evaluated</div>
-          <div class="metric-value" id="dash-total-evaluated">12</div>
-        </div>
-        <div class="metric-card eligible">
-          <div class="metric-title">Confirmed Eligible</div>
-          <div class="metric-value" id="dash-eligible-count">0</div>
-        </div>
-        <div class="metric-card likely">
-          <div class="metric-title">Likely Eligible</div>
-          <div class="metric-value" id="dash-likely-count">0</div>
-        </div>
-        <div class="metric-card ineligible">
-          <div class="metric-title">Ineligible / Excluded</div>
-          <div class="metric-value" id="dash-ineligible-count">0</div>
-        </div>
-        <div class="metric-card">
-          <div class="metric-title">Saved Schemes</div>
-          <div class="metric-value" id="dash-saved-count">0</div>
-        </div>
-      </div>
-
-      <div style="background:white; border:1px solid #E2E8F0; border-radius:12px; padding:20px; margin-bottom:20px;">
-        <h3 style="font-size:16px; font-weight:700; color:#1E3A8A; margin-bottom:12px;">🌟 Confirmed & Recommended Welfare Schemes</h3>
-        <div id="dash-recommended-container" class="schemes-catalog-grid"></div>
-      </div>
-
-      <div style="background:white; border:1px solid #E2E8F0; border-radius:12px; padding:20px;">
-        <h3 style="font-size:16px; font-weight:700; color:#1E3A8A; margin-bottom:12px;">📌 Bookmarked & Application Tracker</h3>
-        <div id="dash-saved-container">
-          <p style="font-size:13px; color:#64748B;">No schemes saved yet. Use the bookmark button on any scheme card.</p>
-        </div>
-      </div>
-    </section>
-
-    <!-- ========================================== -->
-    <!-- VIEW 4: SCHEME CATALOG & BROWSE            -->
+    <!-- VIEW: ALL SCHEMES CATALOG                  -->
     <!-- ========================================== -->
     <section id="view-catalog" class="app-view">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:10px;">
@@ -339,51 +221,7 @@
     </section>
 
     <!-- ========================================== -->
-    <!-- VIEW 5: SCHEME COMPARISON TOOL             -->
-    <!-- ========================================== -->
-    <section id="view-compare" class="app-view">
-      <div style="margin-bottom:20px;">
-        <h2 style="font-size:22px; color:#1E3A8A; font-weight:700;">Scheme Comparison Matrix</h2>
-        <p style="font-size:13px; color:#475569;">Compare up to 3 welfare schemes side-by-side on benefits, eligibility criteria, required documents, and process.</p>
-      </div>
-
-      <div style="background:white; border:1px solid #E2E8F0; border-radius:12px; padding:16px; margin-bottom:20px; display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
-        <label style="font-size:13px; font-weight:700;">Scheme 1:</label>
-        <select id="compare-s1" class="lang-selector" style="width:200px;"></select>
-
-        <label style="font-size:13px; font-weight:700;">Scheme 2:</label>
-        <select id="compare-s2" class="lang-selector" style="width:200px;"></select>
-
-        <label style="font-size:13px; font-weight:700;">Scheme 3 (Optional):</label>
-        <select id="compare-s3" class="lang-selector" style="width:200px;">
-          <option value="">-- None --</option>
-        </select>
-
-        <button class="btn-primary" onclick="runComparison()">⚖️ Compare Now</button>
-      </div>
-
-      <div id="comparison-results-container" style="background:white; border:1px solid #E2E8F0; border-radius:12px; padding:20px; overflow-x:auto;">
-        <p style="font-size:13px; color:#64748B;">Select schemes above and click "Compare Now" to render the detailed comparative matrix.</p>
-      </div>
-    </section>
-
-    <!-- ========================================== -->
-    <!-- VIEW 6: DOCUMENT CHECKLIST                 -->
-    <!-- ========================================== -->
-    <section id="view-checklist" class="app-view">
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; flex-wrap:wrap; gap:10px;">
-        <div>
-          <h2 style="font-size:22px; color:#1E3A8A; font-weight:700;">Consolidated Document Preparation Checklist</h2>
-          <p style="font-size:13px; color:#475569;">Deduplicated list of essential identity, land, banking, and income proofs required across eligible schemes.</p>
-        </div>
-        <button class="btn-secondary" onclick="window.print()">🖨️ Print Checklist</button>
-      </div>
-
-      <div id="checklist-items-container" style="display:flex; flex-direction:column; gap:12px;"></div>
-    </section>
-
-    <!-- ========================================== -->
-    <!-- VIEW 7: SIH JUDGE BENCHMARK SUITE          -->
+    <!-- VIEW: SIH JUDGE BENCHMARK SUITE          -->
     <!-- ========================================== -->
     <section id="view-judge" class="app-view">
       <div class="judge-suite-container">
@@ -489,10 +327,10 @@
   <!-- FOOTER -->
   <footer class="app-footer">
     <p><strong>सुविधा वाणी (SuvidhaVani)</strong> • SIH Problem Statement PS-06: Voice-First Scheme Agent</p>
-    <p style="margin-top:4px;">Built with Deterministic Rule Evaluation, Vernacular NLU, and Official myScheme Standards • Ministry of Electronics & IT</p>
+    <p style="margin-top:4px;">Official myScheme Standards • Ministry of Electronics & IT • Government of India</p>
   </footer>
 
-  <!-- JAVASCRIPT MODULES -->
+  <!-- JAVASCRIPT CONTROLLER -->
   <script src="/js/app.js"></script>
 </body>
 </html>
